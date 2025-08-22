@@ -1,10 +1,18 @@
 [
   {
-    "id": "cmd-github-1755883251377",
-    "type": "github",
+    "id": "cmd-init-1755883293606",
+    "type": "init",
     "success": true,
-    "duration": 15.453832999999989,
-    "timestamp": 1755883251392,
+    "duration": 0.7748749999999944,
+    "timestamp": 1755883293607,
+    "metadata": {}
+  },
+  {
+    "id": "cmd-init-1755883307686",
+    "type": "init",
+    "success": true,
+    "duration": 3753.2177500000003,
+    "timestamp": 1755883311440,
     "metadata": {}
   }
 ]
