@@ -5,7 +5,7 @@ MCP server, client, and host for coordinating Rust-Python pipeline operations.
 */
 
 pub mod server;
-pub mod client; 
+pub mod client;
 pub mod host;
 pub mod protocol;
 
