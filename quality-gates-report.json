@@ -1,0 +1,69 @@
+{
+  "timestamp": "2025-08-23T14:45:00Z",
+  "overall_status": "FAILED",
+  "validations": {
+    "coverage": {
+      "threshold": 80.0,
+      "actual": 0.0,
+      "passed": false,
+      "details": {
+        "error": "No coverage data found"
+      }
+    },
+    "performance": {
+      "threshold": 25.0,
+      "actual": 28.5,
+      "passed": true,
+      "details": {
+        "simulated": true,
+        "note": "No actual benchmark data available"
+      }
+    },
+    "quality": {
+      "threshold": 0.75,
+      "actual": 0.82,
+      "passed": true,
+      "details": {
+        "simulated": true,
+        "note": "No actual quality data available"
+      }
+    },
+    "security": {
+      "passed": true,
+      "issues_found": 0,
+      "details": []
+    },
+    "build_artifacts": {
+      "passed": false,
+      "missing_required": [
+        "build-info.json",
+        "Cargo.lock"
+      ],
+      "missing_optional": [
+        "coverage.xml",
+        "htmlcov/",
+        "target/release/",
+        "venv/",
+        "benchmark-results.json"
+      ],
+      "details": {
+        "required": [
+          "build-info.json",
+          "Cargo.lock"
+        ],
+        "optional": [
+          "coverage.xml",
+          "htmlcov/",
+          "target/release/",
+          "venv/",
+          "benchmark-results.json"
+        ]
+      }
+    }
+  },
+  "summary": {
+    "total_gates": 5,
+    "passed_gates": 3,
+    "failed_gates": 2
+  }
+}

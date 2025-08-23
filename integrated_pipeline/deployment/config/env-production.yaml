@@ -1,0 +1,333 @@
+# Production Environment Configuration for RAN LLM Pipeline
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ran-llm-config
+  namespace: ran-llm-production
+data:
+  # Application Configuration
+  app.json: |
+    {
+      "environment": "production",
+      "debug_mode": false,
+      "log_level": "info",
+      "rust_config": {
+        "log_level": "info",
+        "max_threads": 16,
+        "memory_pool_gb": 60,
+        "zero_copy_enabled": true,
+        "performance_monitoring": true,
+        "optimization_level": "aggressive"
+      },
+      "python_config": {
+        "optimize_level": 2,
+        "mlx_enabled": true,
+        "memory_limit_gb": 45,
+        "qwen_models": ["1.7B", "7B", "30B"],
+        "model_caching": true,
+        "batch_processing": true
+      },
+      "ipc_config": {
+        "shared_memory_gb": 15,
+        "latency_target_us": 100,
+        "lock_free": true,
+        "connection_pooling": true,
+        "compression_enabled": true
+      },
+      "monitoring": {
+        "prometheus_port": 9090,
+        "health_check_port": 8080,
+        "metrics_enabled": true,
+        "detailed_metrics": false,
+        "tracing_enabled": false,
+        "performance_profiling": true
+      },
+      "performance_targets": {
+        "docs_per_hour": 25,
+        "quality_score": 0.75,
+        "max_latency_ms": 150,
+        "availability_percent": 99.9
+      },
+      "security": {
+        "enforce_https": true,
+        "api_rate_limiting": true,
+        "request_validation": true,
+        "audit_logging": true
+      }
+    }
+  
+  # Database Configuration
+  database.conf: |
+    host=postgres-prod.internal
+    port=5432
+    database=ran_llm_production
+    pool_size=50
+    connection_timeout=10
+    statement_timeout=60
+    ssl_mode=require
+    connection_pool_max_idle=10
+    connection_pool_max_lifetime=3600
+  
+  # Redis Configuration  
+  redis.conf: |
+    host=redis-prod.internal
+    port=6379
+    db=0
+    pool_size=50
+    connection_timeout=10
+    ssl_enabled=true
+    cluster_enabled=true
+  
+  # Monitoring Configuration
+  prometheus.yml: |
+    global:
+      scrape_interval: 30s
+      evaluation_interval: 30s
+      external_labels:
+        environment: 'production'
+        cluster: 'ran-llm-prod'
+    
+    rule_files:
+      - "alert_rules.yml"
+    
+    scrape_configs:
+      - job_name: 'ran-llm-pipeline'
+        static_configs:
+          - targets: ['localhost:9090']
+        scrape_interval: 15s
+        metrics_path: '/metrics'
+        honor_timestamps: true
+      
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+      
+      - job_name: 'kubernetes-nodes'
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+  
+  # Alert Rules
+  alert_rules.yml: |
+    groups:
+      - name: ran-llm-alerts
+        rules:
+          - alert: HighErrorRate
+            expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "High error rate detected"
+              description: "Error rate is {{ $value }} requests per second"
+          
+          - alert: HighLatency
+            expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.5
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High latency detected"
+              description: "95th percentile latency is {{ $value }} seconds"
+          
+          - alert: LowThroughput
+            expr: rate(documents_processed_total[1h]) < 20
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Low document processing throughput"
+              description: "Processing {{ $value }} documents per hour (target: 25+)"
+          
+          - alert: MemoryUsageHigh
+            expr: process_resident_memory_bytes / 1024 / 1024 / 1024 > 100
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "High memory usage"
+              description: "Memory usage is {{ $value }}GB (limit: 128GB)"
+          
+          - alert: PodCrashLooping
+            expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Pod is crash looping"
+              description: "Pod {{ $labels.pod }} is restarting frequently"
+  
+  # Logging Configuration
+  logging.conf: |
+    [loggers]
+    keys=root,ran_llm,security,performance
+    
+    [handlers]
+    keys=console,file,security_file,performance_file
+    
+    [formatters]
+    keys=json,detailed
+    
+    [logger_root]
+    level=WARNING
+    handlers=console
+    
+    [logger_ran_llm]
+    level=INFO
+    handlers=console,file
+    qualname=ran_llm
+    propagate=0
+    
+    [logger_security]
+    level=INFO
+    handlers=security_file
+    qualname=security
+    propagate=0
+    
+    [logger_performance]
+    level=INFO
+    handlers=performance_file
+    qualname=performance
+    propagate=0
+    
+    [handler_console]
+    class=StreamHandler
+    level=INFO
+    formatter=json
+    args=(sys.stdout,)
+    
+    [handler_file]
+    class=FileHandler
+    level=INFO
+    formatter=json
+    args=('/app/logs/ran-llm.log', 'a')
+    
+    [handler_security_file]
+    class=FileHandler
+    level=INFO
+    formatter=json
+    args=('/app/logs/security.log', 'a')
+    
+    [handler_performance_file]
+    class=FileHandler
+    level=INFO
+    formatter=json
+    args=('/app/logs/performance.log', 'a')
+    
+    [formatter_json]
+    format={"timestamp": "%(asctime)s", "level": "%(levelname)s", "logger": "%(name)s", "message": "%(message)s", "module": "%(module)s", "line": %(lineno)d}
+    datefmt=%Y-%m-%dT%H:%M:%S
+    
+    [formatter_detailed]
+    format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
+    datefmt=%Y-%m-%d %H:%M:%S
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: ran-llm-production
+data:
+  nginx.conf: |
+    upstream backend {
+        server ran-llm-pipeline-blue:80 max_fails=2 fail_timeout=10s;
+        server ran-llm-pipeline-green:80 max_fails=2 fail_timeout=10s backup;
+    }
+    
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+    limit_req_zone $binary_remote_addr zone=health:10m rate=100r/s;
+    
+    server {
+        listen 80;
+        server_name api.ran-llm.com;
+        
+        # Security headers
+        add_header X-Frame-Options DENY;
+        add_header X-Content-Type-Options nosniff;
+        add_header X-XSS-Protection "1; mode=block";
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
+        
+        # Health check endpoint (high rate limit)
+        location /health {
+            access_log off;
+            limit_req zone=health burst=20 nodelay;
+            proxy_pass http://backend/health;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_connect_timeout 2s;
+            proxy_send_timeout 5s;
+            proxy_read_timeout 5s;
+        }
+        
+        # Readiness check
+        location /ready {
+            access_log off;
+            limit_req zone=health burst=20 nodelay;
+            proxy_pass http://backend/ready;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+        
+        # Main application (rate limited)
+        location /api/ {
+            limit_req zone=api burst=20 nodelay;
+            proxy_pass http://backend;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Timeouts
+            proxy_connect_timeout 10s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+            
+            # Buffer settings
+            proxy_buffering on;
+            proxy_buffer_size 4k;
+            proxy_buffers 8 4k;
+            proxy_max_temp_file_size 1024m;
+        }
+        
+        # Root redirect
+        location / {
+            limit_req zone=api burst=5 nodelay;
+            proxy_pass http://backend;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        
+        # Metrics endpoint (internal only)
+        location /metrics {
+            allow 10.0.0.0/8;
+            allow 172.16.0.0/12;
+            allow 192.168.0.0/16;
+            deny all;
+            
+            proxy_pass http://backend/metrics;
+            proxy_set_header Host $host;
+            access_log off;
+        }
+        
+        # Deny access to sensitive files
+        location ~ /\. {
+            deny all;
+            access_log off;
+            log_not_found off;
+        }
+    }

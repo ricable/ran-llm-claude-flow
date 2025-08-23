@@ -1,0 +1,173 @@
+# Staging Environment Configuration for RAN LLM Pipeline
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ran-llm-config
+  namespace: ran-llm-staging
+data:
+  # Application Configuration
+  app.json: |
+    {
+      "environment": "staging",
+      "debug_mode": true,
+      "log_level": "debug",
+      "rust_config": {
+        "log_level": "debug",
+        "max_threads": 8,
+        "memory_pool_gb": 30,
+        "zero_copy_enabled": true,
+        "performance_monitoring": true
+      },
+      "python_config": {
+        "optimize_level": 1,
+        "mlx_enabled": true,
+        "memory_limit_gb": 20,
+        "qwen_models": ["1.7B"],
+        "debug_mode": true
+      },
+      "ipc_config": {
+        "shared_memory_gb": 8,
+        "latency_target_us": 150,
+        "lock_free": true,
+        "debug_logging": true
+      },
+      "monitoring": {
+        "prometheus_port": 9090,
+        "health_check_port": 8080,
+        "metrics_enabled": true,
+        "detailed_metrics": true,
+        "tracing_enabled": true
+      },
+      "performance_targets": {
+        "docs_per_hour": 15,
+        "quality_score": 0.70,
+        "max_latency_ms": 200
+      }
+    }
+  
+  # Database Configuration
+  database.conf: |
+    host=postgres-staging.internal
+    port=5432
+    database=ran_llm_staging
+    pool_size=10
+    connection_timeout=5
+    statement_timeout=30
+  
+  # Redis Configuration  
+  redis.conf: |
+    host=redis-staging.internal
+    port=6379
+    db=0
+    pool_size=10
+    connection_timeout=5
+  
+  # Monitoring Configuration
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    
+    scrape_configs:
+      - job_name: 'ran-llm-pipeline'
+        static_configs:
+          - targets: ['localhost:9090']
+        scrape_interval: 5s
+        metrics_path: '/metrics'
+      
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+  
+  # Logging Configuration
+  logging.conf: |
+    [loggers]
+    keys=root,ran_llm
+    
+    [handlers]
+    keys=console,file
+    
+    [formatters]
+    keys=detailed
+    
+    [logger_root]
+    level=INFO
+    handlers=console
+    
+    [logger_ran_llm]
+    level=DEBUG
+    handlers=console,file
+    qualname=ran_llm
+    propagate=0
+    
+    [handler_console]
+    class=StreamHandler
+    level=DEBUG
+    formatter=detailed
+    args=(sys.stdout,)
+    
+    [handler_file]
+    class=FileHandler
+    level=INFO
+    formatter=detailed
+    args=('/app/logs/ran-llm.log', 'a')
+    
+    [formatter_detailed]
+    format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
+    datefmt=%Y-%m-%d %H:%M:%S
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: ran-llm-staging
+data:
+  nginx.conf: |
+    upstream backend {
+        server ran-llm-pipeline-blue:80 max_fails=3 fail_timeout=30s;
+        server ran-llm-pipeline-green:80 max_fails=3 fail_timeout=30s backup;
+    }
+    
+    server {
+        listen 80;
+        server_name staging-api.ran-llm.com;
+        
+        # Health check endpoint
+        location /health {
+            access_log off;
+            proxy_pass http://backend/health;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+        
+        # Main application
+        location / {
+            proxy_pass http://backend;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Timeouts
+            proxy_connect_timeout 5s;
+            proxy_send_timeout 30s;
+            proxy_read_timeout 30s;
+        }
+        
+        # Metrics endpoint (internal only)
+        location /metrics {
+            allow 10.0.0.0/8;
+            allow 172.16.0.0/12;
+            allow 192.168.0.0/16;
+            deny all;
+            
+            proxy_pass http://backend/metrics;
+            proxy_set_header Host $host;
+        }
+    }

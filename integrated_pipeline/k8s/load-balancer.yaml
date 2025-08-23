@@ -1,0 +1,353 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ran-llm-ingress
+  namespace: ran-llm-pipeline
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$request_uri"
+    nginx.ingress.kubernetes.io/load-balance: "ewma"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "5"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/rate-limit: "1000"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - api.ran-llm.prod
+    secretName: ran-llm-tls
+  rules:
+  - host: api.ran-llm.prod
+    http:
+      paths:
+      - path: /rust
+        pathType: Prefix
+        backend:
+          service:
+            name: rust-core-service
+            port:
+              number: 8080
+      - path: /ml
+        pathType: Prefix
+        backend:
+          service:
+            name: python-ml-service
+            port:
+              number: 8082
+      - path: /metrics
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus
+            port:
+              number: 9090
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-ingress-controller
+  namespace: ran-llm-pipeline
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+spec:
+  type: LoadBalancer
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 443
+  selector:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/component: controller
+
+---
+# Circuit Breaker Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: circuit-breaker-config
+  namespace: ran-llm-pipeline
+data:
+  circuit-breaker.yaml: |
+    circuit_breakers:
+      rust_core:
+        failure_threshold: 5
+        recovery_timeout: 30s
+        half_open_requests: 3
+        success_threshold: 3
+        
+      python_ml:
+        failure_threshold: 3
+        recovery_timeout: 60s
+        half_open_requests: 2
+        success_threshold: 2
+        
+    health_checks:
+      rust_core:
+        endpoint: "http://rust-core-service:8080/health"
+        interval: 10s
+        timeout: 5s
+        
+      python_ml:
+        endpoint: "http://python-ml-service:8082/health"
+        interval: 15s
+        timeout: 10s
+
+---
+# Load Balancer with Circuit Breaker
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smart-load-balancer
+  namespace: ran-llm-pipeline
+  labels:
+    app: smart-load-balancer
+    component: load-balancer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: smart-load-balancer
+  template:
+    metadata:
+      labels:
+        app: smart-load-balancer
+        component: load-balancer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9093"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: smart-lb
+        image: smart-load-balancer:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 9093
+          name: metrics
+        env:
+        - name: RUST_CORE_SERVICE
+          value: "rust-core-service:8080"
+        - name: PYTHON_ML_SERVICE  
+          value: "python-ml-service:8082"
+        - name: LOAD_BALANCING_ALGORITHM
+          value: "weighted_least_connections"
+        - name: CIRCUIT_BREAKER_ENABLED
+          value: "true"
+        - name: HEALTH_CHECK_INTERVAL
+          value: "10s"
+        - name: TARGET_THROUGHPUT_DOCS_HOUR
+          value: "25"
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 500m
+          limits:
+            memory: 1Gi
+            cpu: 1
+        volumeMounts:
+        - name: circuit-breaker-config
+          mountPath: /etc/circuit-breaker
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: circuit-breaker-config
+        configMap:
+          name: circuit-breaker-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: smart-load-balancer
+  namespace: ran-llm-pipeline
+  labels:
+    app: smart-load-balancer
+spec:
+  selector:
+    app: smart-load-balancer
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  - port: 9093
+    targetPort: 9093
+    protocol: TCP
+    name: metrics
+
+---
+# Vertical Pod Autoscaler for performance optimization
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: rust-core-vpa
+  namespace: ran-llm-pipeline
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rust-core-processor
+  updatePolicy:
+    updateMode: Auto
+  resourcePolicy:
+    containerPolicies:
+    - containerName: rust-core
+      minAllowed:
+        memory: 58Gi
+        cpu: 6
+      maxAllowed:
+        memory: 68Gi
+        cpu: 18
+      controlledResources: ["memory", "cpu"]
+      controlledValues: RequestsAndLimits
+
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: python-ml-vpa
+  namespace: ran-llm-pipeline
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: python-ml-engine
+  updatePolicy:
+    updateMode: Auto
+  resourcePolicy:
+    containerPolicies:
+    - containerName: python-ml
+      minAllowed:
+        memory: 43Gi
+        cpu: 4
+      maxAllowed:
+        memory: 50Gi
+        cpu: 14
+      controlledResources: ["memory", "cpu"]
+      controlledValues: RequestsAndLimits
+
+---
+# Pod Disruption Budget for high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rust-core-pdb
+  namespace: ran-llm-pipeline
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: rust-core
+      component: processor
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: python-ml-pdb
+  namespace: ran-llm-pipeline
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: python-ml
+      component: engine
+
+---
+# Custom Resource Definition for performance scaling
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: performancescalers.ran-llm.io
+spec:
+  group: ran-llm.io
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              targetThroughput:
+                type: integer
+                minimum: 1
+                maximum: 1000
+              latencyThreshold:
+                type: integer
+                minimum: 50
+                maximum: 1000
+              scaleUpPolicy:
+                type: string
+                enum: ["aggressive", "conservative", "balanced"]
+              scaleDownPolicy:
+                type: string  
+                enum: ["aggressive", "conservative", "balanced"]
+            required: ["targetThroughput", "latencyThreshold"]
+          status:
+            type: object
+            properties:
+              currentThroughput:
+                type: integer
+              currentLatency:
+                type: integer
+              replicas:
+                type: integer
+              lastScaleTime:
+                type: string
+                format: date-time
+  scope: Namespaced
+  names:
+    plural: performancescalers
+    singular: performancescaler
+    kind: PerformanceScaler
+
+---
+# Performance-based scaling configuration
+apiVersion: ran-llm.io/v1
+kind: PerformanceScaler
+metadata:
+  name: rust-core-performance-scaler
+  namespace: ran-llm-pipeline
+spec:
+  targetThroughput: 25  # docs per hour
+  latencyThreshold: 100  # microseconds for IPC
+  scaleUpPolicy: "balanced"
+  scaleDownPolicy: "conservative"

@@ -1,0 +1,315 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ipc-config
+  namespace: ran-llm-pipeline
+  labels:
+    component: shared-memory-ipc
+data:
+  ipc-settings.conf: |
+    # Shared Memory IPC Configuration for 15GB Zero-Copy Transfer
+    
+    # Memory pool configuration
+    SHARED_MEMORY_SIZE=16106127360  # 15GB in bytes
+    SHARED_MEMORY_PATH=/dev/shm/ran_llm_ipc
+    MEMORY_SEGMENTS=64              # Number of memory segments
+    SEGMENT_SIZE=251658240          # ~240MB per segment
+    
+    # Zero-copy configuration
+    ZERO_COPY_ENABLED=true
+    MMAP_HUGEPAGES=true
+    HUGE_PAGE_SIZE=2097152          # 2MB huge pages
+    
+    # Performance tuning
+    LATENCY_TARGET_US=100           # Target <100μs latency
+    PREFETCH_ENABLED=true
+    NUMA_AWARE=true
+    CPU_AFFINITY_ENABLED=true
+    
+    # Protocol settings
+    IPC_PROTOCOL_VERSION=2
+    MESSAGE_QUEUE_SIZE=10000
+    BATCH_SIZE=1000
+    TIMEOUT_MS=5000
+    
+    # Security settings
+    IPC_PERMISSIONS=0660
+    USER_GROUP=ranllm
+    
+  sysctl.conf: |
+    # Kernel parameters for optimized IPC performance
+    kernel.shmmax=17179869184       # 16GB max shared memory
+    kernel.shmall=4194304           # 16GB in pages
+    kernel.sem=250 32000 32 128     # Semaphore limits
+    vm.nr_hugepages=8192            # 16GB of 2MB huge pages
+    vm.hugetlb_shm_group=1001       # Allow ranllm group to use hugepages
+    net.core.rmem_max=134217728     # 128MB socket buffer
+    net.core.wmem_max=134217728     # 128MB socket buffer
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ipc-setup
+  namespace: ran-llm-pipeline
+  labels:
+    component: shared-memory-ipc
+spec:
+  selector:
+    matchLabels:
+      name: ipc-setup
+  template:
+    metadata:
+      labels:
+        name: ipc-setup
+        component: shared-memory-ipc
+    spec:
+      hostNetwork: true
+      hostPID: true
+      hostIPC: true
+      initContainers:
+      - name: setup-hugepages
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          # Setup huge pages
+          echo 8192 > /proc/sys/vm/nr_hugepages
+          echo 1001 > /proc/sys/vm/hugetlb_shm_group
+          
+          # Setup shared memory
+          mkdir -p /dev/shm/ran_llm_ipc
+          chmod 775 /dev/shm/ran_llm_ipc
+          
+          # Apply sysctl settings
+          sysctl -w kernel.shmmax=17179869184
+          sysctl -w kernel.shmall=4194304
+          sysctl -w kernel.sem="250 32000 32 128"
+          sysctl -w net.core.rmem_max=134217728
+          sysctl -w net.core.wmem_max=134217728
+          
+          echo "IPC setup completed"
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: proc
+          mountPath: /proc
+        - name: sys
+          mountPath: /sys
+        - name: dev-shm
+          mountPath: /dev/shm
+      containers:
+      - name: ipc-monitor
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          while true; do
+            echo "Monitoring IPC status..."
+            echo "Huge pages: $(cat /proc/meminfo | grep HugePages)"
+            echo "Shared memory: $(df -h /dev/shm)"
+            echo "IPC dir: $(ls -la /dev/shm/ran_llm_ipc 2>/dev/null || echo 'Not found')"
+            sleep 300
+          done
+        resources:
+          requests:
+            memory: 64Mi
+            cpu: 50m
+          limits:
+            memory: 128Mi
+            cpu: 100m
+        volumeMounts:
+        - name: proc
+          mountPath: /proc
+          readOnly: true
+        - name: dev-shm
+          mountPath: /dev/shm
+      volumes:
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: sys
+        hostPath:
+          path: /sys
+      - name: dev-shm
+        hostPath:
+          path: /dev/shm
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ipc-coordinator
+  namespace: ran-llm-pipeline
+  labels:
+    component: shared-memory-ipc
+spec:
+  clusterIP: None
+  selector:
+    component: shared-memory-ipc
+
+---
+# IPC Performance Monitor
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ipc-performance-monitor
+  namespace: ran-llm-pipeline
+  labels:
+    component: ipc-monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ipc-performance-monitor
+  template:
+    metadata:
+      labels:
+        app: ipc-performance-monitor
+        component: ipc-monitor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9092"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: ipc-monitor
+        image: ipc-monitor:latest
+        ports:
+        - containerPort: 9092
+          name: metrics
+          protocol: TCP
+        env:
+        - name: SHARED_MEMORY_PATH
+          value: "/dev/shm/ran_llm_ipc"
+        - name: MONITOR_INTERVAL_MS
+          value: "1000"
+        - name: LATENCY_ALERT_THRESHOLD_US
+          value: "100"
+        - name: PROMETHEUS_PORT
+          value: "9092"
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 200m
+          limits:
+            memory: 512Mi
+            cpu: 500m
+        volumeMounts:
+        - name: shared-memory
+          mountPath: /dev/shm
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9092
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 9092
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: shared-memory
+        hostPath:
+          path: /dev/shm
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ipc-performance-monitor
+  namespace: ran-llm-pipeline
+  labels:
+    component: ipc-monitor
+spec:
+  selector:
+    app: ipc-performance-monitor
+  ports:
+  - port: 9092
+    targetPort: 9092
+    protocol: TCP
+    name: metrics
+
+---
+# RBAC for IPC operations
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ipc-service-account
+  namespace: ran-llm-pipeline
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ipc-cluster-role
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ipc-cluster-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ipc-cluster-role
+subjects:
+- kind: ServiceAccount
+  name: ipc-service-account
+  namespace: ran-llm-pipeline
+
+---
+# Network Policy for IPC Communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ipc-network-policy
+  namespace: ran-llm-pipeline
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: rust-core
+    - podSelector:
+        matchLabels:
+          app: python-ml
+    ports:
+    - protocol: TCP
+      port: 8081
+    - protocol: TCP
+      port: 8083
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: rust-core
+    - podSelector:
+        matchLabels:
+          app: python-ml
+    ports:
+    - protocol: TCP
+      port: 8081
+    - protocol: TCP
+      port: 8083

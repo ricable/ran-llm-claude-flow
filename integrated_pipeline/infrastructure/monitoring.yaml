@@ -1,0 +1,451 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ran-llm-pipeline
+  labels:
+    name: ran-llm-pipeline
+    monitoring: enabled
+
+---
+# Prometheus Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: ran-llm-pipeline
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'ran-llm-production'
+        environment: 'production'
+    
+    rule_files:
+      - "rules/*.yml"
+    
+    scrape_configs:
+    - job_name: 'rust-core'
+      static_configs:
+      - targets: ['rust-core-service:9090']
+      scrape_interval: 5s
+      metrics_path: /metrics
+      
+    - job_name: 'python-ml'
+      static_configs:
+      - targets: ['python-ml-service:9091']
+      scrape_interval: 10s
+      metrics_path: /metrics
+      
+    - job_name: 'kubernetes-pods'
+      kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+          - ran-llm-pipeline
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+        
+    - job_name: 'node-exporter'
+      kubernetes_sd_configs:
+      - role: node
+      relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+        
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets: ["alertmanager:9093"]
+
+---
+# Prometheus AlertManager Rules
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: ran-llm-pipeline
+data:
+  performance.yml: |
+    groups:
+    - name: ran-llm-performance
+      rules:
+      - alert: HighDocumentProcessingLatency
+        expr: rust_core_document_processing_duration_seconds > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          component: rust-core
+        annotations:
+          summary: "Document processing latency is high"
+          description: "Document processing taking {{ $value }}s, target is <0.5s"
+          
+      - alert: LowDocumentThroughput
+        expr: rate(rust_core_documents_processed_total[5m]) * 3600 < 20
+        for: 5m
+        labels:
+          severity: critical
+          component: rust-core
+        annotations:
+          summary: "Document throughput below target"
+          description: "Processing {{ $value }} docs/hour, target is 25+"
+          
+      - alert: HighMemoryUsage
+        expr: (container_memory_usage_bytes{pod=~".*rust-core.*"} / container_spec_memory_limit_bytes{pod=~".*rust-core.*"}) > 0.9
+        for: 3m
+        labels:
+          severity: warning
+          component: rust-core
+        annotations:
+          summary: "High memory usage in Rust core"
+          description: "Memory usage at {{ $value | humanizePercentage }}"
+          
+      - alert: IPCLatencyHigh
+        expr: rust_core_ipc_latency_microseconds > 150
+        for: 1m
+        labels:
+          severity: critical
+          component: ipc
+        annotations:
+          summary: "IPC latency exceeds target"
+          description: "IPC latency is {{ $value }}μs, target is <100μs"
+          
+      - alert: MLModelInferenceTimeout
+        expr: python_ml_inference_duration_seconds > 5.0
+        for: 2m
+        labels:
+          severity: warning
+          component: python-ml
+        annotations:
+          summary: "ML inference taking too long"
+          description: "Inference taking {{ $value }}s, check model performance"
+          
+      - alert: QwenModelLoadFailed
+        expr: python_ml_model_load_errors_total > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: python-ml
+        annotations:
+          summary: "Qwen model failed to load"
+          description: "{{ $value }} model load failures detected"
+
+---
+# Prometheus Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: ran-llm-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.47.0
+        ports:
+        - containerPort: 9090
+        args:
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/prometheus
+        - --storage.tsdb.retention.time=15d
+        - --storage.tsdb.retention.size=50GB
+        - --web.enable-lifecycle
+        - --web.enable-admin-api
+        volumeMounts:
+        - name: prometheus-config
+          mountPath: /etc/prometheus
+        - name: prometheus-rules
+          mountPath: /etc/prometheus/rules
+        - name: prometheus-storage
+          mountPath: /prometheus
+        resources:
+          requests:
+            memory: 4Gi
+            cpu: 1
+          limits:
+            memory: 8Gi
+            cpu: 2
+      volumes:
+      - name: prometheus-config
+        configMap:
+          name: prometheus-config
+      - name: prometheus-rules
+        configMap:
+          name: prometheus-rules
+      - name: prometheus-storage
+        persistentVolumeClaim:
+          claimName: prometheus-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: ran-llm-pipeline
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-pvc
+  namespace: ran-llm-pipeline
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: fast-ssd
+
+---
+# Grafana Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-config
+  namespace: ran-llm-pipeline
+data:
+  grafana.ini: |
+    [analytics]
+    check_for_updates = false
+    reporting_enabled = false
+    
+    [security]
+    admin_user = admin
+    admin_password = $GRAFANA_ADMIN_PASSWORD
+    
+    [users]
+    allow_sign_up = false
+    auto_assign_org_role = Viewer
+    
+    [auth.anonymous]
+    enabled = false
+    
+    [dashboards]
+    default_home_dashboard_path = /etc/grafana/dashboards/ran-llm-overview.json
+    
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: http://prometheus:9090
+      isDefault: true
+      editable: true
+
+---
+# Grafana Dashboards ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: ran-llm-pipeline
+data:
+  ran-llm-overview.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "RAN LLM Pipeline Overview",
+        "tags": ["ran-llm", "performance"],
+        "timezone": "UTC",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Document Processing Throughput",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(rust_core_documents_processed_total[5m]) * 3600",
+                "legendFormat": "Docs/Hour"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "steps": [
+                    {"color": "red", "value": 0},
+                    {"color": "yellow", "value": 20},
+                    {"color": "green", "value": 25}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 2,
+            "title": "IPC Latency",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rust_core_ipc_latency_microseconds",
+                "legendFormat": "μs"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "µs",
+                "thresholds": {
+                  "steps": [
+                    {"color": "green", "value": 0},
+                    {"color": "yellow", "value": 100},
+                    {"color": "red", "value": 150}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 3,
+            "title": "Memory Usage",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "container_memory_usage_bytes{pod=~'.*rust-core.*'} / 1024 / 1024 / 1024",
+                "legendFormat": "Rust Core (GB)"
+              },
+              {
+                "expr": "container_memory_usage_bytes{pod=~'.*python-ml.*'} / 1024 / 1024 / 1024",
+                "legendFormat": "Python ML (GB)"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "title": "ML Model Performance",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "rate(python_ml_inference_requests_total[5m])",
+                "legendFormat": "Inferences/sec"
+              },
+              {
+                "expr": "python_ml_inference_duration_seconds",
+                "legendFormat": "Inference Duration"
+              }
+            ]
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "5s"
+      }
+    }
+
+---
+# Grafana Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: ran-llm-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:10.2.0
+        ports:
+        - containerPort: 3000
+        env:
+        - name: GRAFANA_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: admin-password
+        volumeMounts:
+        - name: grafana-config
+          mountPath: /etc/grafana
+        - name: grafana-dashboards
+          mountPath: /etc/grafana/dashboards
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 500m
+          limits:
+            memory: 2Gi
+            cpu: 1
+      volumes:
+      - name: grafana-config
+        configMap:
+          name: grafana-config
+      - name: grafana-dashboards
+        configMap:
+          name: grafana-dashboards
+      - name: grafana-storage
+        persistentVolumeClaim:
+          claimName: grafana-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: ran-llm-pipeline
+spec:
+  selector:
+    app: grafana
+  ports:
+  - port: 3000
+    targetPort: 3000
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-secret
+  namespace: ran-llm-pipeline
+type: Opaque
+data:
+  admin-password: UkFOTExNUGFzcw== # RANLLMPass in base64
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: ran-llm-pipeline
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd

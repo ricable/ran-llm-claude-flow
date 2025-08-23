@@ -1,0 +1,180 @@
+# Alert Rules for RAN LLM Claude Flow Production Monitoring
+# Performance SLAs: 25+ docs/hour, <100μs IPC latency, >0.75 quality score
+
+groups:
+  - name: performance_alerts
+    rules:
+      # Document Processing Performance
+      - alert: DocumentProcessingThroughputLow
+        expr: rate(documents_processed_total[5m]) * 3600 < 25
+        for: 2m
+        labels:
+          severity: critical
+          component: document_processor
+        annotations:
+          summary: "Document processing throughput below SLA"
+          description: "Current throughput: {{ $value }} docs/hour (target: 25+)"
+
+      # IPC Latency Monitoring
+      - alert: IPCLatencyHigh
+        expr: histogram_quantile(0.95, rate(ipc_latency_seconds_bucket[30s])) > 0.0001
+        for: 30s
+        labels:
+          severity: warning
+          component: ipc_protocol
+        annotations:
+          summary: "IPC latency exceeds 100μs threshold"
+          description: "P95 IPC latency: {{ $value }}s (target: <100μs)"
+
+      # Memory Utilization Alerts (128GB M3 Max)
+      - alert: MemoryUtilizationHigh
+        expr: (memory_used_bytes / memory_total_bytes) > 0.95
+        for: 1m
+        labels:
+          severity: critical
+          component: system_resources
+        annotations:
+          summary: "Memory utilization critical"
+          description: "Memory usage: {{ $value | humanizePercentage }} (target: <95%)"
+
+      # Quality Score Monitoring
+      - alert: QualityScoreLow
+        expr: avg_over_time(document_quality_score[10m]) < 0.75
+        for: 5m
+        labels:
+          severity: warning
+          component: quality_validator
+        annotations:
+          summary: "Document quality score below threshold"
+          description: "Average quality: {{ $value }} (target: >0.75)"
+
+  - name: system_health_alerts
+    rules:
+      # Rust Core Health
+      - alert: RustCoreUnhealthy
+        expr: up{job="rust-core"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: rust_core
+        annotations:
+          summary: "Rust core component is down"
+          description: "The Rust processing core is not responding"
+
+      # Python ML Engine Health
+      - alert: PythonMLEngineUnhealthy
+        expr: up{job="python-ml"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: python_ml
+        annotations:
+          summary: "Python ML engine is down"
+          description: "The Python ML processing engine is not responding"
+
+      # MLX GPU Utilization
+      - alert: MLXGPUUtilizationLow
+        expr: mlx_gpu_utilization < 0.3
+        for: 5m
+        labels:
+          severity: warning
+          component: mlx_accelerator
+        annotations:
+          summary: "MLX GPU utilization unexpectedly low"
+          description: "GPU utilization: {{ $value | humanizePercentage }}"
+
+  - name: bottleneck_alerts
+    rules:
+      # Bottleneck Detection
+      - alert: PerformanceBottleneckDetected
+        expr: bottleneck_severity_score > 0.8
+        for: 1m
+        labels:
+          severity: warning
+          component: bottleneck_analyzer
+        annotations:
+          summary: "Performance bottleneck detected"
+          description: "Bottleneck severity: {{ $value }} in component {{ $labels.bottleneck_component }}"
+
+      # Shared Memory Pool Exhaustion
+      - alert: SharedMemoryPoolExhaustion
+        expr: (shared_memory_used_bytes / shared_memory_total_bytes) > 0.9
+        for: 2m
+        labels:
+          severity: critical
+          component: shared_memory
+        annotations:
+          summary: "Shared memory pool near exhaustion"
+          description: "Shared memory usage: {{ $value | humanizePercentage }} (15GB pool)"
+
+  - name: adaptive_optimization_alerts
+    rules:
+      # Optimization Effectiveness
+      - alert: OptimizationIneffective
+        expr: increase(optimization_applied_total[10m]) > 0 and rate(documents_processed_total[10m]) <= rate(documents_processed_total[20m] offset 10m)
+        for: 5m
+        labels:
+          severity: info
+          component: performance_optimizer
+        annotations:
+          summary: "Recent optimizations not improving performance"
+          description: "Optimizations applied but throughput unchanged"
+
+      # Neural Model Performance
+      - alert: NeuralModelDegradation
+        expr: avg_over_time(neural_model_confidence[15m]) < 0.85
+        for: 10m
+        labels:
+          severity: warning
+          component: neural_patterns
+        annotations:
+          summary: "Neural model confidence declining"
+          description: "Model confidence: {{ $value }} (threshold: 0.85)"
+
+  - name: coordination_alerts
+    rules:
+      # Agent Coordination Health
+      - alert: AgentCoordinationFailure
+        expr: rate(coordination_failures_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          component: agent_coordination
+        annotations:
+          summary: "High agent coordination failure rate"
+          description: "Failure rate: {{ $value }}/sec"
+
+      # MCP Server Response Time
+      - alert: MCPServerSlowResponse
+        expr: histogram_quantile(0.95, rate(mcp_request_duration_seconds_bucket[1m])) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          component: mcp_server
+        annotations:
+          summary: "MCP server response time degraded"
+          description: "P95 response time: {{ $value }}s"
+
+  - name: resource_efficiency_alerts
+    rules:
+      # CPU Efficiency
+      - alert: CPUEfficiencyLow
+        expr: (rate(cpu_time_seconds_total[5m]) / documents_processed_rate) > 2
+        for: 5m
+        labels:
+          severity: info
+          component: resource_efficiency
+        annotations:
+          summary: "CPU efficiency below optimal"
+          description: "CPU time per document: {{ $value }}s"
+
+      # Monitoring Overhead Check
+      - alert: MonitoringOverheadHigh
+        expr: monitoring_overhead_percentage > 1.0
+        for: 3m
+        labels:
+          severity: warning
+          component: monitoring_system
+        annotations:
+          summary: "Monitoring system overhead exceeds 1%"
+          description: "Monitoring overhead: {{ $value }}%"

@@ -1,0 +1,238 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rust-core-processor
+  namespace: ran-llm-pipeline
+  labels:
+    app: rust-core
+    component: processor
+    tier: backend
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: rust-core
+      component: processor
+  template:
+    metadata:
+      labels:
+        app: rust-core
+        component: processor
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64
+        node-type: high-memory
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - rust-core
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: rust-core
+        image: rust-core:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 9090
+          name: metrics
+          protocol: TCP
+        - containerPort: 8081
+          name: ipc
+          protocol: TCP
+        resources:
+          requests:
+            memory: "60Gi"
+            cpu: "8"
+            ephemeral-storage: "20Gi"
+          limits:
+            memory: "64Gi" 
+            cpu: "16"
+            ephemeral-storage: "50Gi"
+        env:
+        - name: RUST_LOG
+          value: "info"
+        - name: RUSTFLAGS
+          value: "-C target-cpu=native -C opt-level=3"
+        - name: M3_MAX_CORES
+          value: "16"
+        - name: MEMORY_POOL_SIZE
+          value: "60737418240" # 60GB in bytes
+        - name: IPC_SHARED_MEMORY_SIZE
+          value: "16106127360" # 15GB in bytes
+        - name: ZERO_COPY_ENABLED
+          value: "true"
+        - name: NUMA_AFFINITY
+          value: "true"
+        - name: HUGEPAGES_ENABLED
+          value: "true"
+        volumeMounts:
+        - name: shared-memory
+          mountPath: /dev/shm
+        - name: hugepages
+          mountPath: /hugepages
+        - name: performance-config
+          mountPath: /etc/rust-core
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /startup
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 12
+      volumes:
+      - name: shared-memory
+        emptyDir:
+          medium: Memory
+          sizeLimit: 15Gi
+      - name: hugepages
+        emptyDir:
+          medium: HugePages-2Mi
+          sizeLimit: 4Gi
+      - name: performance-config
+        configMap:
+          name: rust-core-config
+      terminationGracePeriodSeconds: 60
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rust-core-service
+  namespace: ran-llm-pipeline
+  labels:
+    app: rust-core
+    component: processor
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  - port: 8081
+    targetPort: 8081
+    protocol: TCP
+    name: ipc
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: metrics
+  selector:
+    app: rust-core
+    component: processor
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rust-core-config
+  namespace: ran-llm-pipeline
+data:
+  config.toml: |
+    [performance]
+    max_cores = 16
+    memory_pool_gb = 60
+    numa_affinity = true
+    hugepages = true
+    
+    [ipc]
+    shared_memory_size_gb = 15
+    zero_copy = true
+    latency_target_us = 100
+    
+    [processing]
+    batch_size = 1000
+    queue_depth = 16
+    prefetch_enabled = true
+    
+    [monitoring]
+    metrics_port = 9090
+    health_check_interval_ms = 1000
+    performance_logging = true
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rust-core-hpa
+  namespace: ran-llm-pipeline
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rust-core-processor
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: documents_per_second
+      target:
+        type: AverageValue
+        averageValue: "7" # Target 25+ docs/hour per pod
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60

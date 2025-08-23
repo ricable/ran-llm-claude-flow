@@ -1,0 +1,535 @@
+# Terraform Configuration for RAN LLM Infrastructure
+# This file defines the complete infrastructure as code for production deployment
+
+terraform:
+  required_version: ">= 1.5"
+  required_providers:
+    aws:
+      source: "hashicorp/aws"
+      version: "~> 5.0"
+    kubernetes:
+      source: "hashicorp/kubernetes"
+      version: "~> 2.23"
+    helm:
+      source: "hashicorp/helm"
+      version: "~> 2.11"
+
+---
+# AWS Provider Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: terraform-aws-config
+  namespace: ran-llm-pipeline
+data:
+  main.tf: |
+    provider "aws" {
+      region = var.aws_region
+      default_tags {
+        tags = {
+          Project     = "RAN-LLM-Pipeline"
+          Environment = var.environment
+          ManagedBy   = "Terraform"
+          Component   = "Infrastructure"
+        }
+      }
+    }
+    
+    # EKS Cluster for ARM64 instances
+    module "eks" {
+      source  = "terraform-aws-modules/eks/aws"
+      version = "~> 19.0"
+      
+      cluster_name    = "ran-llm-${var.environment}"
+      cluster_version = "1.28"
+      
+      vpc_id     = module.vpc.vpc_id
+      subnet_ids = module.vpc.private_subnets
+      
+      cluster_endpoint_private_access = true
+      cluster_endpoint_public_access  = true
+      
+      # ARM64 optimized node groups
+      eks_managed_node_groups = {
+        high_memory_arm64 = {
+          name = "high-memory-arm64"
+          
+          instance_types = ["m7g.8xlarge", "m6g.8xlarge"]
+          capacity_type  = "ON_DEMAND"
+          
+          min_size     = 3
+          max_size     = 10
+          desired_size = 5
+          
+          ami_type = "AL2_ARM_64"
+          
+          labels = {
+            node-type = "high-memory"
+            arch      = "arm64"
+          }
+          
+          taints = {
+            high-memory = {
+              key    = "high-memory"
+              value  = "true"
+              effect = "NO_SCHEDULE"
+            }
+          }
+          
+          # 128GB memory, 32 vCPUs
+          block_device_mappings = {
+            xvda = {
+              device_name = "/dev/xvda"
+              ebs = {
+                volume_size           = 200
+                volume_type          = "gp3"
+                iops                 = 16000
+                throughput           = 1000
+                encrypted            = true
+                delete_on_termination = true
+              }
+            }
+          }
+        }
+        
+        ml_optimized_arm64 = {
+          name = "ml-optimized-arm64"
+          
+          instance_types = ["g5g.8xlarge", "p4d.24xlarge"]
+          capacity_type  = "ON_DEMAND"
+          
+          min_size     = 2
+          max_size     = 6
+          desired_size = 3
+          
+          ami_type = "AL2_ARM_64_GPU"
+          
+          labels = {
+            node-type    = "ml-optimized"
+            arch         = "arm64"
+            mlx-support  = "true"
+            gpu-enabled  = "true"
+          }
+          
+          taints = {
+            ml-workload = {
+              key    = "ml-workload"
+              value  = "true"
+              effect = "NO_SCHEDULE"
+            }
+          }
+        }
+      }
+      
+      # Fargate profiles for monitoring workloads
+      fargate_profiles = {
+        monitoring = {
+          name = "monitoring"
+          selectors = [
+            {
+              namespace = "monitoring"
+              labels = {
+                component = "monitoring"
+              }
+            }
+          ]
+        }
+      }
+    }
+    
+    # VPC Configuration
+    module "vpc" {
+      source = "terraform-aws-modules/vpc/aws"
+      
+      name = "ran-llm-vpc-${var.environment}"
+      cidr = "10.0.0.0/16"
+      
+      azs             = ["${var.aws_region}a", "${var.aws_region}b", "${var.aws_region}c"]
+      private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+      public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+      
+      enable_nat_gateway   = true
+      enable_vpn_gateway   = false
+      enable_dns_hostnames = true
+      enable_dns_support   = true
+      
+      # Enhanced networking for high-performance IPC
+      enable_flow_log                      = true
+      create_flow_log_cloudwatch_log_group = true
+      create_flow_log_cloudwatch_iam_role  = true
+    }
+    
+    # Application Load Balancer
+    resource "aws_lb" "ran_llm_alb" {
+      name               = "ran-llm-alb-${var.environment}"
+      internal           = false
+      load_balancer_type = "application"
+      security_groups    = [aws_security_group.alb.id]
+      subnets           = module.vpc.public_subnets
+      
+      enable_deletion_protection = false
+      
+      access_logs {
+        bucket  = aws_s3_bucket.alb_logs.bucket
+        prefix  = "ran-llm-alb"
+        enabled = true
+      }
+    }
+    
+    # S3 Bucket for logs and model storage
+    resource "aws_s3_bucket" "model_storage" {
+      bucket = "ran-llm-models-${var.environment}-${random_id.bucket_suffix.hex}"
+    }
+    
+    resource "aws_s3_bucket" "alb_logs" {
+      bucket = "ran-llm-alb-logs-${var.environment}-${random_id.bucket_suffix.hex}"
+    }
+    
+    resource "random_id" "bucket_suffix" {
+      byte_length = 4
+    }
+    
+    # ElastiCache Redis for IPC coordination
+    resource "aws_elasticache_subnet_group" "ran_llm" {
+      name       = "ran-llm-cache-subnet"
+      subnet_ids = module.vpc.private_subnets
+    }
+    
+    resource "aws_elasticache_replication_group" "ran_llm" {
+      description       = "Redis cluster for RAN LLM IPC coordination"
+      replication_group_id = "ran-llm-redis-${var.environment}"
+      
+      node_type                  = "cache.r6g.xlarge"
+      port                       = 6379
+      parameter_group_name       = "default.redis7"
+      
+      num_cache_clusters         = 3
+      automatic_failover_enabled = true
+      multi_az_enabled          = true
+      
+      subnet_group_name = aws_elasticache_subnet_group.ran_llm.name
+      security_group_ids = [aws_security_group.redis.id]
+      
+      at_rest_encryption_enabled = true
+      transit_encryption_enabled = true
+    }
+    
+  variables.tf: |
+    variable "aws_region" {
+      description = "AWS region for deployment"
+      type        = string
+      default     = "us-west-2"
+    }
+    
+    variable "environment" {
+      description = "Environment name (dev, staging, prod)"
+      type        = string
+      default     = "prod"
+    }
+    
+    variable "cluster_version" {
+      description = "Kubernetes cluster version"
+      type        = string
+      default     = "1.28"
+    }
+    
+    variable "node_groups" {
+      description = "EKS node group configurations"
+      type = map(object({
+        instance_types = list(string)
+        min_size       = number
+        max_size       = number
+        desired_size   = number
+      }))
+      default = {
+        high_memory = {
+          instance_types = ["m7g.8xlarge"]
+          min_size       = 3
+          max_size       = 10
+          desired_size   = 5
+        }
+        ml_optimized = {
+          instance_types = ["g5g.8xlarge"]
+          min_size       = 2
+          max_size       = 6
+          desired_size   = 3
+        }
+      }
+    }
+    
+  outputs.tf: |
+    output "cluster_endpoint" {
+      description = "Endpoint for EKS control plane"
+      value       = module.eks.cluster_endpoint
+    }
+    
+    output "cluster_security_group_id" {
+      description = "Security group ID attached to the EKS cluster"
+      value       = module.eks.cluster_security_group_id
+    }
+    
+    output "cluster_iam_role_name" {
+      description = "IAM role name associated with EKS cluster"
+      value       = module.eks.cluster_iam_role_name
+    }
+    
+    output "cluster_certificate_authority_data" {
+      description = "Base64 encoded certificate data required to communicate with the cluster"
+      value       = module.eks.cluster_certificate_authority_data
+    }
+    
+    output "cluster_name" {
+      description = "The name/id of the EKS cluster"
+      value       = module.eks.cluster_name
+    }
+    
+    output "redis_endpoint" {
+      description = "Redis cluster endpoint for IPC coordination"
+      value       = aws_elasticache_replication_group.ran_llm.configuration_endpoint_address
+    }
+    
+    output "alb_dns_name" {
+      description = "DNS name of the load balancer"
+      value       = aws_lb.ran_llm_alb.dns_name
+    }
+
+---
+# Kubernetes Terraform Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: terraform-k8s-config
+  namespace: ran-llm-pipeline
+data:
+  kubernetes.tf: |
+    # Kubernetes provider configuration
+    provider "kubernetes" {
+      host                   = data.aws_eks_cluster.cluster.endpoint
+      cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority.0.data)
+      token                  = data.aws_eks_cluster_auth.cluster.token
+    }
+    
+    provider "helm" {
+      kubernetes {
+        host                   = data.aws_eks_cluster.cluster.endpoint
+        cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority.0.data)
+        token                  = data.aws_eks_cluster_auth.cluster.token
+      }
+    }
+    
+    data "aws_eks_cluster" "cluster" {
+      name = module.eks.cluster_name
+    }
+    
+    data "aws_eks_cluster_auth" "cluster" {
+      name = module.eks.cluster_name
+    }
+    
+    # Namespace
+    resource "kubernetes_namespace" "ran_llm" {
+      metadata {
+        name = "ran-llm-pipeline"
+        labels = {
+          name        = "ran-llm-pipeline"
+          monitoring  = "enabled"
+          environment = var.environment
+        }
+      }
+    }
+    
+    # NGINX Ingress Controller
+    resource "helm_release" "nginx_ingress" {
+      name       = "ingress-nginx"
+      repository = "https://kubernetes.github.io/ingress-nginx"
+      chart      = "ingress-nginx"
+      namespace  = "ingress-nginx"
+      version    = "4.8.3"
+      
+      create_namespace = true
+      
+      set {
+        name  = "controller.service.type"
+        value = "LoadBalancer"
+      }
+      
+      set {
+        name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
+        value = "nlb"
+      }
+      
+      set {
+        name  = "controller.config.compute-full-forwarded-for"
+        value = "true"
+      }
+      
+      set {
+        name  = "controller.config.use-forwarded-headers"
+        value = "true"
+      }
+    }
+    
+    # Prometheus monitoring stack
+    resource "helm_release" "prometheus" {
+      name       = "prometheus"
+      repository = "https://prometheus-community.github.io/helm-charts"
+      chart      = "kube-prometheus-stack"
+      namespace  = kubernetes_namespace.ran_llm.metadata[0].name
+      version    = "55.5.0"
+      
+      values = [
+        file("${path.module}/prometheus-values.yaml")
+      ]
+    }
+    
+    # Metrics Server
+    resource "helm_release" "metrics_server" {
+      name       = "metrics-server"
+      repository = "https://kubernetes-sigs.github.io/metrics-server/"
+      chart      = "metrics-server"
+      namespace  = "kube-system"
+      version    = "3.11.0"
+      
+      set {
+        name  = "args"
+        value = "{--kubelet-insecure-tls,--kubelet-preferred-address-types=InternalIP\\,ExternalIP\\,Hostname}"
+      }
+    }
+    
+    # Vertical Pod Autoscaler
+    resource "helm_release" "vpa" {
+      name       = "vpa"
+      repository = "https://charts.fairwinds.com/stable"
+      chart      = "vpa"
+      namespace  = "vpa-system"
+      version    = "4.4.5"
+      
+      create_namespace = true
+    }
+
+---
+# Deployment Scripts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: deployment-scripts
+  namespace: ran-llm-pipeline
+data:
+  deploy.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    echo "🚀 Starting RAN LLM Pipeline Deployment"
+    
+    # Check prerequisites
+    command -v kubectl >/dev/null 2>&1 || { echo "kubectl required but not installed."; exit 1; }
+    command -v terraform >/dev/null 2>&1 || { echo "terraform required but not installed."; exit 1; }
+    command -v helm >/dev/null 2>&1 || { echo "helm required but not installed."; exit 1; }
+    
+    # Set environment variables
+    export AWS_REGION=${AWS_REGION:-us-west-2}
+    export ENVIRONMENT=${ENVIRONMENT:-prod}
+    export CLUSTER_NAME="ran-llm-${ENVIRONMENT}"
+    
+    echo "📋 Environment: ${ENVIRONMENT}"
+    echo "🌍 Region: ${AWS_REGION}"
+    echo "🏗️  Cluster: ${CLUSTER_NAME}"
+    
+    # Deploy infrastructure
+    echo "🏗️  Deploying infrastructure with Terraform..."
+    cd terraform/
+    terraform init
+    terraform plan -var="aws_region=${AWS_REGION}" -var="environment=${ENVIRONMENT}"
+    terraform apply -auto-approve -var="aws_region=${AWS_REGION}" -var="environment=${ENVIRONMENT}"
+    
+    # Update kubeconfig
+    echo "⚙️  Updating kubeconfig..."
+    aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}
+    
+    # Deploy Kubernetes resources
+    echo "☸️  Deploying Kubernetes resources..."
+    kubectl apply -f k8s/
+    
+    # Build and push Docker images
+    echo "🐳 Building Docker images..."
+    docker build -f docker/rust-core.Dockerfile -t ${ECR_REPO}/rust-core:latest .
+    docker build -f docker/python-ml.Dockerfile -t ${ECR_REPO}/python-ml:latest .
+    
+    # Push to ECR
+    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO}
+    docker push ${ECR_REPO}/rust-core:latest
+    docker push ${ECR_REPO}/python-ml:latest
+    
+    # Wait for deployments
+    echo "⏳ Waiting for deployments to be ready..."
+    kubectl wait --for=condition=available --timeout=600s deployment/rust-core-processor -n ran-llm-pipeline
+    kubectl wait --for=condition=available --timeout=600s deployment/python-ml-engine -n ran-llm-pipeline
+    
+    # Run health checks
+    echo "🩺 Running health checks..."
+    kubectl get pods -n ran-llm-pipeline
+    kubectl get services -n ran-llm-pipeline
+    
+    # Output endpoints
+    echo "✅ Deployment completed successfully!"
+    echo ""
+    echo "📊 Monitoring Dashboard: http://$(kubectl get ingress ran-llm-ingress -n ran-llm-pipeline -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')/grafana"
+    echo "🔍 Prometheus: http://$(kubectl get ingress ran-llm-ingress -n ran-llm-pipeline -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')/metrics"
+    echo "🦀 Rust Core API: http://$(kubectl get ingress ran-llm-ingress -n ran-llm-pipeline -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')/rust"
+    echo "🐍 Python ML API: http://$(kubectl get ingress ran-llm-ingress -n ran-llm-pipeline -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')/ml"
+    
+  validate.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    echo "🧪 Starting RAN LLM Pipeline Validation"
+    
+    NAMESPACE="ran-llm-pipeline"
+    
+    # Check pod status
+    echo "📋 Checking pod status..."
+    kubectl get pods -n ${NAMESPACE}
+    
+    # Validate Rust core performance
+    echo "🦀 Validating Rust core performance..."
+    RUST_POD=$(kubectl get pods -n ${NAMESPACE} -l app=rust-core -o jsonpath='{.items[0].metadata.name}')
+    kubectl exec ${RUST_POD} -n ${NAMESPACE} -- /app/rust_core_bench
+    
+    # Test IPC latency
+    echo "🔗 Testing IPC latency..."
+    LATENCY=$(kubectl exec ${RUST_POD} -n ${NAMESPACE} -- curl -s http://localhost:9090/metrics | grep rust_core_ipc_latency_microseconds | awk '{print $2}')
+    if (( $(echo "${LATENCY} > 100" | bc -l) )); then
+      echo "❌ IPC latency ${LATENCY}μs exceeds target of 100μs"
+      exit 1
+    else
+      echo "✅ IPC latency ${LATENCY}μs within target"
+    fi
+    
+    # Test throughput
+    echo "📊 Testing document throughput..."
+    THROUGHPUT=$(kubectl exec ${RUST_POD} -n ${NAMESPACE} -- curl -s http://localhost:9090/metrics | grep rust_core_documents_processed_total | awk '{print $2}')
+    echo "✅ Current throughput: ${THROUGHPUT} docs/hour"
+    
+    # Validate Python ML performance
+    echo "🐍 Validating Python ML performance..."
+    PYTHON_POD=$(kubectl get pods -n ${NAMESPACE} -l app=python-ml -o jsonpath='{.items[0].metadata.name}')
+    kubectl exec ${PYTHON_POD} -n ${NAMESPACE} -- python -c "import mlx.core as mx; print(f'MLX available: {mx.default_device()}')"
+    
+    echo "✅ Validation completed successfully!"
+    
+  rollback.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    echo "🔄 Starting rollback procedure..."
+    
+    NAMESPACE="ran-llm-pipeline"
+    
+    # Rollback deployments
+    kubectl rollout undo deployment/rust-core-processor -n ${NAMESPACE}
+    kubectl rollout undo deployment/python-ml-engine -n ${NAMESPACE}
+    
+    # Wait for rollback
+    kubectl rollout status deployment/rust-core-processor -n ${NAMESPACE}
+    kubectl rollout status deployment/python-ml-engine -n ${NAMESPACE}
+    
+    echo "✅ Rollback completed"

@@ -1,0 +1,262 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "RAN LLM Claude Flow - Production Performance Dashboard",
+    "description": "Comprehensive monitoring for hybrid Rust-Python pipeline with M3 Max optimization",
+    "tags": ["ran-llm", "claude-flow", "production", "m3-max"],
+    "timezone": "browser",
+    "refresh": "5s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Document Processing Throughput",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(documents_processed_total[5m]) * 3600",
+            "legendFormat": "Documents/Hour"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "max": 50,
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 20},
+                {"color": "green", "value": 25}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "IPC Latency Distribution",
+        "type": "histogram",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(ipc_latency_seconds_bucket[1m]))",
+            "legendFormat": "P50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(ipc_latency_seconds_bucket[1m]))",
+            "legendFormat": "P95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(ipc_latency_seconds_bucket[1m]))",
+            "legendFormat": "P99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "thresholdsStyle": {
+                "mode": "line"
+              }
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 0.00005},
+                {"color": "red", "value": 0.0001}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "M3 Max Memory Utilization (128GB Total)",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rust_core_memory_bytes / (60 * 1024^3)",
+            "legendFormat": "Rust Core (60GB)"
+          },
+          {
+            "expr": "python_ml_memory_bytes / (45 * 1024^3)",
+            "legendFormat": "Python ML (45GB)"
+          },
+          {
+            "expr": "shared_memory_used_bytes / (15 * 1024^3)",
+            "legendFormat": "Shared Memory (15GB)"
+          },
+          {
+            "expr": "monitoring_memory_bytes / (8 * 1024^3)",
+            "legendFormat": "Monitoring (8GB)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "max": 1,
+            "min": 0
+          }
+        },
+        "gridPos": {"h": 8, "w": 18, "x": 18, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Quality Score Tracking",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "avg_over_time(document_quality_score[5m])",
+            "legendFormat": "Quality Score"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 0.7},
+                {"color": "green", "value": 0.75}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Bottleneck Analysis",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "topk(5, bottleneck_severity_score)",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {},
+              "indexByName": {},
+              "renameByName": {
+                "__name__": "Metric",
+                "Value": "Severity",
+                "bottleneck_component": "Component"
+              }
+            }
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 6, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "MLX GPU Utilization",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "mlx_gpu_utilization",
+            "legendFormat": "GPU Utilization"
+          },
+          {
+            "expr": "mlx_gpu_memory_used / mlx_gpu_memory_total",
+            "legendFormat": "GPU Memory"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "max": 1,
+            "min": 0
+          }
+        },
+        "gridPos": {"h": 8, "w": 18, "x": 18, "y": 8}
+      },
+      {
+        "id": 7,
+        "title": "Agent Coordination Health",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(coordination_success_total[1m])",
+            "legendFormat": "Success Rate"
+          },
+          {
+            "expr": "rate(coordination_failures_total[1m])",
+            "legendFormat": "Failure Rate"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 8,
+        "title": "Real-time Performance Optimization",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(optimizations_applied_total[1m])",
+            "legendFormat": "Optimizations/sec"
+          },
+          {
+            "expr": "optimization_effectiveness_score",
+            "legendFormat": "Effectiveness Score"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 9,
+        "title": "Neural Model Performance",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "neural_model_confidence",
+            "legendFormat": "Model Confidence"
+          },
+          {
+            "expr": "rate(neural_predictions_total[1m])",
+            "legendFormat": "Predictions/sec"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "instance",
+          "type": "query",
+          "query": "label_values(up, instance)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Optimizations",
+          "datasource": "Prometheus",
+          "expr": "ALERTS{alertname=\"OptimizationApplied\"}",
+          "iconColor": "green"
+        },
+        {
+          "name": "Bottlenecks",
+          "datasource": "Prometheus", 
+          "expr": "ALERTS{alertname=\"PerformanceBottleneckDetected\"}",
+          "iconColor": "red"
+        }
+      ]
+    }
+  }
+}

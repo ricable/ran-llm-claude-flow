@@ -1,0 +1,510 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "RAN LLM Claude Flow - Real-time Performance Monitoring",
+    "description": "Real-time monitoring dashboard for production deployment with bottleneck detection and adaptive optimization",
+    "tags": ["performance", "real-time", "production", "optimization"],
+    "timezone": "browser",
+    "refresh": "1s",
+    "time": {
+      "from": "now-15m",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Live Performance Metrics",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(documents_processed_total[30s]) * 3600",
+            "legendFormat": "Docs/Hour"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(ipc_latency_seconds_bucket[30s])) * 1000000",
+            "legendFormat": "P95 IPC (μs)"
+          },
+          {
+            "expr": "avg_over_time(document_quality_score[1m])",
+            "legendFormat": "Quality Score"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 20},
+                {"color": "green", "value": 25}
+              ]
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "P95 IPC (μs)"},
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "steps": [
+                      {"color": "green", "value": 0},
+                      {"color": "yellow", "value": 80},
+                      {"color": "red", "value": 100}
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Quality Score"},
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "steps": [
+                      {"color": "red", "value": 0},
+                      {"color": "yellow", "value": 0.7},
+                      {"color": "green", "value": 0.75}
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "M3 Max Resource Utilization (128GB)",
+        "type": "bargauge",
+        "targets": [
+          {
+            "expr": "rust_core_memory_bytes / (60 * 1024^3)",
+            "legendFormat": "Rust Core (60GB)"
+          },
+          {
+            "expr": "python_ml_memory_bytes / (45 * 1024^3)",
+            "legendFormat": "Python ML (45GB)"
+          },
+          {
+            "expr": "shared_memory_used_bytes / (15 * 1024^3)",
+            "legendFormat": "Shared Memory (15GB)"
+          },
+          {
+            "expr": "monitoring_memory_bytes / (8 * 1024^3)",
+            "legendFormat": "Monitoring (8GB)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 0.8},
+                {"color": "red", "value": 0.9}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Real-time Bottleneck Detection",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "topk(10, bottleneck_severity_score > 0.3)",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"Time": true, "__name__": true},
+              "renameByName": {
+                "Value": "Severity",
+                "bottleneck_component": "Component",
+                "bottleneck_type": "Type",
+                "recommendation": "Recommendation"
+              }
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "displayMode": "color-background",
+              "filterable": true
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "Severity"},
+              "properties": [
+                {
+                  "id": "custom.displayMode",
+                  "value": "gradient-gauge"
+                },
+                {
+                  "id": "max",
+                  "value": 1
+                },
+                {
+                  "id": "min", 
+                  "value": 0
+                }
+              ]
+            }
+          ]
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "IPC Latency Heatmap (μs)",
+        "type": "heatmap",
+        "targets": [
+          {
+            "expr": "rate(ipc_latency_seconds_bucket[30s])",
+            "format": "heatmap",
+            "legendFormat": "{{le}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "vis": false
+              },
+              "scaleDistribution": {
+                "type": "linear"
+              }
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 5,
+        "title": "Adaptive Optimization Events",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(optimizations_applied_total[1m])",
+            "legendFormat": "Optimizations/sec"
+          },
+          {
+            "expr": "optimization_effectiveness_score",
+            "legendFormat": "Effectiveness Score"
+          },
+          {
+            "expr": "bottleneck_severity_score",
+            "legendFormat": "Bottleneck Severity"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "barAlignment": 0,
+              "lineWidth": 2,
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "spanNulls": false,
+              "insertNulls": false,
+              "showPoints": "auto",
+              "pointSize": 5,
+              "stacking": {
+                "mode": "none",
+                "group": "A"
+              },
+              "axisPlacement": "auto",
+              "axisLabel": "",
+              "axisColorMode": "text",
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "axisCenteredZero": false,
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "vis": false
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "color": {
+              "mode": "palette-classic"
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "Neural Model Performance",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "neural_model_confidence",
+            "legendFormat": "{{model}} Confidence"
+          },
+          {
+            "expr": "rate(neural_predictions_total[1m])",
+            "legendFormat": "{{model}} Predictions/sec"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+      },
+      {
+        "id": 7,
+        "title": "MLX GPU Utilization",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "mlx_gpu_utilization",
+            "legendFormat": "GPU Utilization"
+          },
+          {
+            "expr": "mlx_gpu_memory_used_bytes / mlx_gpu_memory_total_bytes",
+            "legendFormat": "GPU Memory"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "max": 1,
+            "min": 0
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+      },
+      {
+        "id": 8,
+        "title": "System Health Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"rust-core\"}",
+            "legendFormat": "Rust Core"
+          },
+          {
+            "expr": "up{job=\"python-ml\"}",
+            "legendFormat": "Python ML"
+          },
+          {
+            "expr": "up{job=\"ipc-protocol\"}",
+            "legendFormat": "IPC Protocol"
+          },
+          {
+            "expr": "up{job=\"mcp-server\"}",
+            "legendFormat": "MCP Server"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "type": "value",
+                "options": {
+                  "0": {
+                    "text": "DOWN",
+                    "color": "red"
+                  },
+                  "1": {
+                    "text": "UP",
+                    "color": "green"
+                  }
+                }
+              }
+            ],
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "green", "value": 1}
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 6, "w": 24, "x": 0, "y": 32}
+      },
+      {
+        "id": 9,
+        "title": "Document Processing Pipeline Flow",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(documents_processed_total{stage=\"input\"}[1m])",
+            "legendFormat": "Input Queue"
+          },
+          {
+            "expr": "rate(documents_processed_total{stage=\"rust_processing\"}[1m])",
+            "legendFormat": "Rust Processing"
+          },
+          {
+            "expr": "rate(documents_processed_total{stage=\"python_ml\"}[1m])",
+            "legendFormat": "Python ML"
+          },
+          {
+            "expr": "rate(documents_processed_total{stage=\"quality_validation\"}[1m])",
+            "legendFormat": "Quality Validation"
+          },
+          {
+            "expr": "rate(documents_processed_total{stage=\"output\"}[1m])",
+            "legendFormat": "Output"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 38}
+      },
+      {
+        "id": 10,
+        "title": "Monitoring System Overhead",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "monitoring_overhead_percentage",
+            "legendFormat": "Monitoring Overhead %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 2,
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 0.5},
+                {"color": "red", "value": 1.0}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 46}
+      },
+      {
+        "id": 11,
+        "title": "Performance Targets Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "(rate(documents_processed_total[5m]) * 3600) >= 25",
+            "legendFormat": "Throughput Target (25+ docs/hour)"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(ipc_latency_seconds_bucket[1m])) <= 0.0001",
+            "legendFormat": "IPC Latency Target (<100μs)"
+          },
+          {
+            "expr": "avg_over_time(document_quality_score[10m]) >= 0.75",
+            "legendFormat": "Quality Target (>0.75)"
+          },
+          {
+            "expr": "monitoring_overhead_percentage <= 1.0",
+            "legendFormat": "Monitoring Overhead (<1%)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "type": "value",
+                "options": {
+                  "0": {
+                    "text": "MISS",
+                    "color": "red"
+                  },
+                  "1": {
+                    "text": "MET",
+                    "color": "green"
+                  }
+                }
+              }
+            ],
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "green", "value": 1}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 6, "w": 18, "x": 6, "y": 46}
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "component",
+          "type": "query",
+          "query": "label_values(up, job)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        },
+        {
+          "name": "refresh_rate",
+          "type": "custom",
+          "options": [
+            {"text": "1s", "value": "1s"},
+            {"text": "5s", "value": "5s"},
+            {"text": "10s", "value": "10s"}
+          ],
+          "current": {"text": "1s", "value": "1s"}
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Bottlenecks Detected",
+          "datasource": "Prometheus",
+          "expr": "ALERTS{alertname=\"PerformanceBottleneckDetected\"}",
+          "iconColor": "red",
+          "lineColor": "red"
+        },
+        {
+          "name": "Optimizations Applied",
+          "datasource": "Prometheus",
+          "expr": "increase(optimizations_applied_total[1m]) > 0",
+          "iconColor": "green",
+          "lineColor": "green"
+        },
+        {
+          "name": "Model Switches",
+          "datasource": "Prometheus",
+          "expr": "increase(model_switches_total[1m]) > 0",
+          "iconColor": "blue",
+          "lineColor": "blue"
+        }
+      ]
+    }
+  }
+}

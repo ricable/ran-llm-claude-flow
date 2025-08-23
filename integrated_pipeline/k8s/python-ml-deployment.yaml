@@ -1,0 +1,276 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-ml-engine
+  namespace: ran-llm-pipeline
+  labels:
+    app: python-ml
+    component: engine
+    tier: ml
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: python-ml
+      component: engine
+  template:
+    metadata:
+      labels:
+        app: python-ml
+        component: engine
+        tier: ml
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
+        prometheus.io/path: "/metrics"
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64
+        node-type: ml-optimized
+        mlx-support: "true"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - python-ml
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: python-ml
+        image: python-ml:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8082
+          name: http
+          protocol: TCP
+        - containerPort: 9091
+          name: metrics
+          protocol: TCP
+        - containerPort: 8083
+          name: ipc
+          protocol: TCP
+        resources:
+          requests:
+            memory: "45Gi"
+            cpu: "6"
+            ephemeral-storage: "15Gi"
+            nvidia.com/gpu: 1
+          limits:
+            memory: "48Gi"
+            cpu: "12"
+            ephemeral-storage: "30Gi"
+            nvidia.com/gpu: 1
+        env:
+        - name: PYTHONPATH
+          value: "/app:/app/src"
+        - name: PYTHON_OPTIMIZATIONS
+          value: "1"
+        - name: MLX_UNIFIED_MEMORY
+          value: "48636764160" # 45GB in bytes
+        - name: MLX_GPU_MEMORY
+          value: "42949672960" # 40GB in bytes
+        - name: QWEN3_MODEL_SIZE
+          value: "auto" # Auto-select between 1.7B/7B/30B based on load
+        - name: BATCH_SIZE_DYNAMIC
+          value: "true"
+        - name: MODEL_CACHE_SIZE
+          value: "8589934592" # 8GB model cache
+        - name: IPC_ENDPOINT
+          value: "rust-core-service:8081"
+        - name: SHARED_MEMORY_PATH
+          value: "/dev/shm/ml_engine"
+        - name: NUMA_NODE
+          value: "1"
+        - name: OMP_NUM_THREADS
+          value: "12"
+        volumeMounts:
+        - name: shared-memory
+          mountPath: /dev/shm
+        - name: model-cache
+          mountPath: /models
+        - name: ml-config
+          mountPath: /etc/ml-engine
+          readOnly: true
+        - name: gpu-device
+          mountPath: /dev/nvidia0
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8082
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8082
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /startup
+            port: 8082
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 18
+      volumes:
+      - name: shared-memory
+        emptyDir:
+          medium: Memory
+          sizeLimit: 15Gi
+      - name: model-cache
+        persistentVolumeClaim:
+          claimName: ml-models-pvc
+      - name: ml-config
+        configMap:
+          name: python-ml-config
+      - name: gpu-device
+        hostPath:
+          path: /dev/nvidia0
+      terminationGracePeriodSeconds: 120
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-ml-service
+  namespace: ran-llm-pipeline
+  labels:
+    app: python-ml
+    component: engine
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8082
+    targetPort: 8082
+    protocol: TCP
+    name: http
+  - port: 8083
+    targetPort: 8083
+    protocol: TCP
+    name: ipc
+  - port: 9091
+    targetPort: 9091
+    protocol: TCP
+    name: metrics
+  selector:
+    app: python-ml
+    component: engine
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: python-ml-config
+  namespace: ran-llm-pipeline
+data:
+  config.yaml: |
+    mlx:
+      unified_memory_gb: 45
+      gpu_memory_gb: 40
+      model_cache_gb: 8
+      device_type: "unified"
+    
+    qwen3:
+      auto_model_selection: true
+      models:
+        small: "Qwen/Qwen3-1.7B-Instruct"
+        medium: "Qwen/Qwen3-7B-Instruct" 
+        large: "Qwen/Qwen3-30B-Instruct"
+      load_balancing: true
+      dynamic_batching: true
+    
+    performance:
+      max_batch_size: 32
+      prefill_parallel: true
+      kv_cache_optimization: true
+      flash_attention: true
+    
+    ipc:
+      rust_core_endpoint: "rust-core-service:8081"
+      shared_memory_size_gb: 15
+      protocol: "zero_copy"
+      timeout_ms: 5000
+    
+    monitoring:
+      metrics_port: 9091
+      log_level: "INFO"
+      performance_tracking: true
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ml-models-pvc
+  namespace: ran-llm-pipeline
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: fast-ssd
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: python-ml-hpa
+  namespace: ran-llm-pipeline
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: python-ml-engine
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 85
+  - type: Pods
+    pods:
+      metric:
+        name: ml_inference_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "10"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 120
