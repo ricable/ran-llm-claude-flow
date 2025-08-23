@@ -1,0 +1,337 @@
+# M3 Max Optimized Pipeline Configuration
+# Designed for MacBook Pro M3 Max with 128GB unified memory
+# Target: 15-30 documents/hour with >0.742 quality score
+
+version: "1.0.0"
+environment: "production"
+description: "M3 Max optimized pipeline for high-performance RAN document processing"
+
+# Global pipeline configuration
+pipeline:
+  mode: "adaptive"                    # adaptive, sequential, parallel, streaming
+  max_parallel_stages: 6             # Utilize M3 Max cores efficiently
+  batch_size: 100                    # Optimized for memory throughput
+  timeout_seconds: 3600              # 1 hour total pipeline timeout
+  memory_limit_gb: 100.0             # Leave 28GB for system and models
+  enable_checkpointing: true         # Enable progress checkpoints
+  checkpoint_interval: 1000          # Checkpoint every 1000 items
+  retry_attempts: 3                  # Pipeline-level retry attempts
+  error_handling: "log_and_continue" # Continue processing on errors
+
+# M3 Max hardware optimization
+hardware:
+  target_platform: "m3_max"
+  enable_apple_silicon_acceleration: true
+  enable_metal_performance_shaders: true
+  enable_neural_engine: true
+  enable_amx_coprocessor: true
+  unified_memory_gb: 128
+
+# Memory pool configuration
+memory:
+  pools:
+    models:
+      size_gb: 40.0
+      strategy: "lazy"               # Load models on demand
+      max_models: 3                  # qwen3:1.7b, qwen3:7b, qwen3:30b
+    processing:
+      size_gb: 50.0
+      strategy: "adaptive"           # Adapt to workload
+      enable_compression: true
+    cache:
+      size_gb: 30.0
+      strategy: "adaptive"
+      ttl_seconds: 7200             # 2 hours cache TTL
+    system:
+      size_gb: 8.0
+      strategy: "eager"             # Pre-allocate system resources
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  enable_file_logging: true
+  log_file: "pipeline.log"
+  enable_performance_logging: true
+
+# 6-Stage Pipeline Configuration
+stages:
+  # Stage 1: Raw Input Processing
+  - stage_id: "stage_1_raw_input"
+    stage_type: "raw_input"
+    enabled: true
+    execution_mode: "blocking"
+    max_workers: 4                   # I/O bound, moderate parallelism
+    batch_size: 50
+    memory_limit_gb: 15.0
+    timeout_seconds: 600
+    retry_attempts: 2
+    
+    processors:
+      - type: "zip_extractor"
+        enabled: true
+        config:
+          extract_to: "/tmp/pipeline_extract"
+          preserve_structure: true
+          max_extract_size_gb: 10.0
+      
+      - type: "file_detector"
+        enabled: true
+        config:
+          supported_formats: ["html", "pdf", "csv", "txt", "zip"]
+          content_validation: true
+      
+      - type: "batch_organizer"
+        enabled: true
+        config:
+          grouping_strategy: "by_type_and_size"
+          max_batch_size_gb: 5.0
+
+  # Stage 2: Document Conversion
+  - stage_id: "stage_2_conversion"
+    stage_type: "document_conversion"
+    enabled: true
+    execution_mode: "batch"
+    max_workers: 6                   # CPU intensive, higher parallelism
+    batch_size: 30
+    memory_limit_gb: 25.0
+    timeout_seconds: 900
+    retry_attempts: 2
+    
+    processors:
+      - type: "html_converter"
+        enabled: true
+        config:
+          use_docling: true
+          use_beautiful_soup: true
+          preserve_tables: true
+          extract_images: true
+      
+      - type: "pdf_converter" 
+        enabled: true
+        config:
+          enable_ocr: true
+          table_extraction: true
+          image_extraction: true
+          quality_threshold: 0.7
+      
+      - type: "csv_converter"
+        enabled: true
+        config:
+          auto_detect_format: true
+          max_columns: 100
+          preserve_structure: true
+      
+      - type: "txt_converter"
+        enabled: true
+        config:
+          encoding_detection: true
+          preprocessing: "minimal"
+
+  # Stage 3: Preprocessing
+  - stage_id: "stage_3_preprocessing" 
+    stage_type: "preprocessing"
+    enabled: true
+    execution_mode: "batch"
+    max_workers: 8
+    batch_size: 40
+    memory_limit_gb: 20.0
+    timeout_seconds: 600
+    retry_attempts: 1
+    
+    processors:
+      - type: "legal_content_remover"
+        enabled: true
+        config:
+          remove_copyright: true
+          remove_disclaimers: true
+          preserve_technical_content: true
+      
+      - type: "image_processor"
+        enabled: true
+        config:
+          max_images: 1000
+          resize_large_images: true
+          extract_text_from_images: false
+      
+      - type: "table_preserver"
+        enabled: true
+        config:
+          markdown_tables: true
+          preserve_formatting: true
+      
+      - type: "quality_assessor"
+        enabled: true
+        config:
+          min_quality_score: 0.3
+          assessment_criteria: ["length", "structure", "technical_content"]
+
+  # Stage 4: LangExtract Processing (Most Resource Intensive)
+  - stage_id: "stage_4_langextract"
+    stage_type: "langextract"
+    enabled: true
+    execution_mode: "batch"
+    max_workers: 3                   # Limited by model memory
+    batch_size: 10                   # Smaller batches for large models
+    memory_limit_gb: 40.0            # Largest allocation for models
+    timeout_seconds: 1800            # 30 minutes for complex extraction
+    retry_attempts: 2
+    
+    processors:
+      - type: "intelligent_chunker"
+        enabled: true
+        config:
+          chunk_size: 4000
+          overlap: 200
+          smart_splitting: true
+          preserve_context: true
+      
+      - type: "category_extractor"
+        enabled: true
+        config:
+          categories: ["features", "parameters", "procedures", "troubleshooting", "specifications", "examples"]
+          confidence_threshold: 0.7
+          parallel_extraction: false  # Sequential to manage memory
+      
+      - type: "model_selector"
+        enabled: true
+        config:
+          model_strategy:
+            qwen3_1_7b:
+              use_cases: ["simple_extraction", "embeddings"]
+              max_tokens: 2048
+              memory_gb: 8
+            qwen3_7b:
+              use_cases: ["balanced_processing", "conversation_generation"]
+              max_tokens: 4096
+              memory_gb: 25
+            qwen3_30b:
+              use_cases: ["complex_analysis", "quality_assessment"]
+              max_tokens: 8192
+              memory_gb: 40
+          enable_circuit_breaker: true
+          circuit_breaker_threshold: 5
+          fallback_model: "qwen3_1_7b"
+
+  # Stage 5: Conversation Generation
+  - stage_id: "stage_5_conversation"
+    stage_type: "conversation_generation"
+    enabled: true
+    execution_mode: "batch"
+    max_workers: 4
+    batch_size: 25
+    memory_limit_gb: 30.0
+    timeout_seconds: 900
+    retry_attempts: 2
+    
+    processors:
+      - type: "qa_generator"
+        enabled: true
+        config:
+          conversation_style: "technical_support"
+          min_qa_pairs: 3
+          max_qa_pairs: 10
+          quality_threshold: 0.6
+      
+      - type: "cmedit_integrator"
+        enabled: true
+        config:
+          integrate_commands: true
+          command_examples: true
+          parameter_explanations: true
+      
+      - type: "quality_scorer"
+        enabled: true
+        config:
+          scoring_model: "qwen3_7b"
+          min_score: 0.5
+          target_score: 0.742
+
+  # Stage 6: Dataset Finalization
+  - stage_id: "stage_6_finalization"
+    stage_type: "dataset_finalization"
+    enabled: true
+    execution_mode: "batch"
+    max_workers: 6
+    batch_size: 100
+    memory_limit_gb: 25.0
+    timeout_seconds: 600
+    retry_attempts: 1
+    
+    processors:
+      - type: "multi_format_exporter"
+        enabled: true
+        config:
+          output_formats: ["jsonl", "parquet", "csv"]
+          compression: true
+          validate_output: true
+      
+      - type: "data_splitter"
+        enabled: true
+        config:
+          train_ratio: 0.8
+          validation_ratio: 0.1
+          test_ratio: 0.1
+          stratified: true
+      
+      - type: "deduplicator"
+        enabled: true
+        config:
+          similarity_threshold: 0.85
+          hash_method: "semantic"
+          preserve_unique: true
+      
+      - type: "final_validator"
+        enabled: true
+        config:
+          validate_format: true
+          validate_quality: true
+          min_dataset_size: 1000
+          quality_checks: ["completeness", "consistency", "format"]
+
+# Performance monitoring
+monitoring:
+  enable_metrics: true
+  metrics_interval: 60              # seconds
+  enable_profiling: false           # Disable in production
+  memory_alerts:
+    warning_threshold: 85           # %
+    critical_threshold: 95          # %
+  performance_alerts:
+    min_throughput: 10              # items/hour
+    max_processing_time: 7200       # 2 hours
+
+# Model configuration
+models:
+  local_models:
+    qwen3_1_7b:
+      path: "qwen3:1.7b"
+      api_base: "http://localhost:11434"
+      context_length: 32768
+      memory_gb: 8
+    qwen3_7b:
+      path: "qwen3:7b"  
+      api_base: "http://localhost:11434"
+      context_length: 32768
+      memory_gb: 25
+    qwen3_30b:
+      path: "qwen3:30b"
+      api_base: "http://localhost:1234"
+      context_length: 32768
+      memory_gb: 40
+  
+  model_warming: true               # Pre-load models
+  model_timeout: 300                # seconds
+  enable_model_switching: true
+
+# Quality control
+quality:
+  target_score: 0.742
+  enable_quality_gates: true
+  quality_gates:
+    stage_2_conversion: 0.4
+    stage_3_preprocessing: 0.5
+    stage_4_langextract: 0.6
+    stage_5_conversation: 0.7
+  enable_quality_feedback: true
+  quality_improvement: true
