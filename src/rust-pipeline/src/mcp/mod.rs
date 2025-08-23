@@ -9,6 +9,9 @@ pub mod client;
 pub mod host;
 pub mod protocol;
 
+#[cfg(test)]
+pub mod tests;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;

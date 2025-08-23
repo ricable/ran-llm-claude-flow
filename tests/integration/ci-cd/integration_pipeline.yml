@@ -1,0 +1,407 @@
+name: RAN-LLM Hybrid Pipeline Integration Tests
+
+on:
+  push:
+    branches: [ main, develop, 'feat/**' ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run nightly tests at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'Test suite to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'ipc'
+          - 'mcp'
+          - 'performance'
+          - 'model-switching'
+
+env:
+  PYTHON_VERSION: '3.11'
+  RUST_VERSION: 'stable'
+  NODE_VERSION: '18'
+
+jobs:
+  # Environment setup and validation
+  setup:
+    name: Environment Setup & Validation
+    runs-on: ubuntu-latest
+    outputs:
+      rust-cache-key: ${{ steps.rust-cache.outputs.cache-hit }}
+      python-cache-key: ${{ steps.python-cache.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          profile: minimal
+          override: true
+          components: rustfmt, clippy
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Cache Rust dependencies
+        id: rust-cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/rust-pipeline/target
+          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+          
+      - name: Cache Python dependencies
+        id: python-cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r src/python-pipeline/requirements.txt
+          pip install pytest pytest-asyncio psutil websockets
+          
+      - name: Install Rust dependencies
+        working-directory: src/rust-pipeline
+        run: cargo build --release
+        
+      - name: Install Node dependencies
+        working-directory: src
+        run: npm install
+        
+      - name: Validate environment
+        run: |
+          echo "Python: $(python --version)"
+          echo "Rust: $(rustc --version)"
+          echo "Node: $(node --version)"
+          echo "Available memory: $(free -h | head -2)"
+          echo "CPU cores: $(nproc)"
+
+  # Rust-Python IPC Communication Tests
+  ipc-tests:
+    name: IPC Communication Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'ipc' || github.event.inputs.test_suite == ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-asyncio psutil
+          cd src/rust-pipeline && cargo build --release
+          
+      - name: Run IPC tests
+        run: |
+          cd tests/integration
+          python -m pytest rust-python-ipc/test_ipc_communication.py -v --tb=short
+          
+      - name: Upload IPC test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: ipc-test-results
+          path: tests/integration/test_results.log
+
+  # MCP Protocol Validation Tests  
+  mcp-tests:
+    name: MCP Protocol Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'mcp' || github.event.inputs.test_suite == ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-asyncio websockets
+          
+      - name: Run MCP tests
+        run: |
+          cd tests/integration
+          python -m pytest mcp-protocol/test_mcp_validation.py -v --tb=short
+          
+      - name: Upload MCP test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: mcp-test-results
+          path: tests/integration/test_results.log
+
+  # Performance Benchmark Tests
+  performance-tests:
+    name: Performance Benchmark Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'performance' || github.event.inputs.test_suite == ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-asyncio psutil
+          cd src/rust-pipeline && cargo build --release
+          
+      - name: Run performance tests
+        run: |
+          cd tests/integration
+          python -m pytest performance/test_performance_benchmarks.py -v --tb=short
+          
+      - name: Upload performance results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: performance-test-results
+          path: tests/integration/test_results.log
+
+  # Model Switching Tests
+  model-switching-tests:
+    name: Model Switching Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    if: github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'model-switching' || github.event.inputs.test_suite == ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-asyncio psutil
+          
+      - name: Run model switching tests
+        run: |
+          cd tests/integration
+          python -m pytest model-switching/test_qwen3_variants.py -v --tb=short
+          
+      - name: Upload model switching results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: model-switching-test-results
+          path: tests/integration/test_results.log
+
+  # Comprehensive Integration Test Suite
+  comprehensive-tests:
+    name: Comprehensive Integration Tests
+    runs-on: ubuntu-latest
+    needs: [setup, ipc-tests, mcp-tests, performance-tests, model-switching-tests]
+    if: github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-asyncio psutil websockets
+          cd src/rust-pipeline && cargo build --release
+          
+      - name: Run comprehensive test suite
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd tests/integration
+          python run_all_tests.py
+          
+      - name: Upload comprehensive results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: comprehensive-test-results
+          path: |
+            tests/integration/final_test_report.json
+            tests/integration/test_results.log
+            
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            try {
+              const report = JSON.parse(fs.readFileSync('tests/integration/final_test_report.json', 'utf8'));
+              const execution = report.test_execution;
+              const performance = report.performance_analysis;
+              
+              const statusEmoji = execution.overall_status === 'PASS' ? '✅' : '❌';
+              const comment = `${statusEmoji} **Integration Test Results**
+              
+              ## 📊 Summary
+              - **Tests**: ${execution.tests_passed}/${execution.total_tests} passed (${(execution.overall_success_rate * 100).toFixed(1)}%)
+              - **Duration**: ${execution.duration_seconds.toFixed(1)}s
+              - **Performance**: ${performance.performance_improvement.toFixed(1)}x improvement
+              
+              ## 🔧 Components
+              - **IPC Communication**: ${report.validation_results.rust_python_ipc_working ? '✅' : '❌'}
+              - **MCP Protocol**: ${report.validation_results.mcp_protocol_compliant ? '✅' : '❌'}
+              - **Model Switching**: ${report.validation_results.model_switching_functional ? '✅' : '❌'}
+              - **M3 Max Optimization**: ${report.validation_results.m3_max_optimization_working ? '✅' : '❌'}
+              
+              See full report in artifacts.`;
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            } catch (error) {
+              console.log('Could not read test report:', error);
+            }
+
+  # Security and Quality Gates
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+        
+      - name: Run Rust security audit
+        working-directory: src/rust-pipeline
+        run: |
+          cargo install cargo-audit
+          cargo audit
+          
+      - name: Run Python security scan
+        run: |
+          pip install safety bandit
+          safety check -r src/python-pipeline/requirements.txt
+          bandit -r src/python-pipeline/ -f json -o security-report.json
+          
+      - name: Upload security results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: security-scan-results
+          path: security-report.json
+
+  # Deployment readiness check
+  deployment-readiness:
+    name: Deployment Readiness
+    runs-on: ubuntu-latest
+    needs: [comprehensive-tests, security-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+        
+      - name: Download test results
+        uses: actions/download-artifact@v3
+        with:
+          name: comprehensive-test-results
+          
+      - name: Validate deployment readiness
+        run: |
+          echo "Checking deployment readiness criteria..."
+          
+          # Check if comprehensive tests passed
+          if [ ! -f "final_test_report.json" ]; then
+            echo "❌ No test report found"
+            exit 1
+          fi
+          
+          # Parse test results
+          OVERALL_STATUS=$(python -c "import json; report = json.load(open('final_test_report.json')); print(report['test_execution']['overall_status'])")
+          SUCCESS_RATE=$(python -c "import json; report = json.load(open('final_test_report.json')); print(report['test_execution']['overall_success_rate'])")
+          PERFORMANCE_MET=$(python -c "import json; report = json.load(open('final_test_report.json')); print(report['validation_results']['performance_targets_met'])")
+          
+          echo "Overall status: $OVERALL_STATUS"
+          echo "Success rate: $SUCCESS_RATE"
+          echo "Performance targets met: $PERFORMANCE_MET"
+          
+          # Check deployment criteria
+          if [ "$OVERALL_STATUS" != "PASS" ]; then
+            echo "❌ Tests did not pass - deployment blocked"
+            exit 1
+          fi
+          
+          if (( $(echo "$SUCCESS_RATE < 0.95" | bc -l) )); then
+            echo "❌ Success rate below 95% - deployment blocked"
+            exit 1
+          fi
+          
+          if [ "$PERFORMANCE_MET" != "True" ]; then
+            echo "❌ Performance targets not met - deployment blocked"
+            exit 1
+          fi
+          
+          echo "✅ All deployment readiness criteria met"
+          
+      - name: Create deployment tag
+        if: success()
+        run: |
+          DATE=$(date +%Y%m%d-%H%M%S)
+          TAG="deployment-ready-$DATE"
+          git tag $TAG
+          git push origin $TAG
+          echo "Created deployment tag: $TAG"
+
+  # Notification
+  notify:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [comprehensive-tests, security-scan]
+    if: always()
+    steps:
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Integration tests failed. Check the logs for details."
+          # In a real environment, you would send notifications to Slack, Teams, etc.
+          
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "✅ All integration tests passed successfully!"
+          # In a real environment, you would send success notifications
