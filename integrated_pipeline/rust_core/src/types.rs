@@ -269,3 +269,27 @@ pub enum PipelineError {
 
 /// Result type for pipeline operations
 pub type PipelineResult<T> = Result<T, PipelineError>;
+
+/// M3 Max processing statistics for optimization tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct M3ProcessingStats {
+    pub successful_documents: usize,
+    pub processing_time: Duration,
+    pub peak_memory_gb: f64,
+    pub average_memory_per_doc_mb: usize,
+    pub max_memory_delta_mb: usize,
+    pub concurrency_used: usize,
+}
+
+impl Default for PipelineStats {
+    fn default() -> Self {
+        Self {
+            documents_processed: 0,
+            total_qa_pairs_generated: 0,
+            average_quality: 0.0,
+            total_time: Duration::from_secs(0),
+            memory_peak_gb: 0.0,
+            errors_encountered: 0,
+        }
+    }
+}

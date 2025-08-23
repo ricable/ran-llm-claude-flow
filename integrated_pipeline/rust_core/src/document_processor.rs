@@ -16,6 +16,11 @@ use tokio::fs;
 use tokio::sync::{mpsc, Semaphore};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+use tokio::task::JoinHandle;
+use futures::future::try_join_all;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use once_cell::sync::Lazy;
+use sysinfo::{System, SystemExt};
 
 /// High-performance document processor optimized for M3 Max
 pub struct DocumentProcessor {
@@ -101,67 +106,65 @@ impl DocumentProcessor {
         })
     }
     
-    /// Process entire directory of documents
+    /// Process entire directory of documents with M3 Max optimization
     pub async fn process_directory(&self, input_dir: &Path, output_dir: &Path) -> Result<PipelineStats> {
         let start_time = Instant::now();
-        info!("Starting directory processing: {:?}", input_dir);
+        info!("Starting M3 Max optimized directory processing: {:?}", input_dir);
+        
+        // Log system information for optimization tracking
+        self.log_system_information().await;
         
         // Ensure output directory exists
         fs::create_dir_all(output_dir).await?;
         
-        // Discover documents
-        let document_paths = self.discover_documents(input_dir).await?;
+        // Discover documents with parallel file system scanning
+        let document_paths = self.discover_documents_parallel(input_dir).await?;
         info!("Found {} documents to process", document_paths.len());
         
-        // Create processing channel
-        let (result_tx, mut result_rx) = mpsc::channel::<ProcessingResult>(1000);
+        if document_paths.is_empty() {
+            warn!("No documents found in directory: {:?}", input_dir);
+            return Ok(PipelineStats::default());
+        }
         
-        // Start result collector
+        // Create high-capacity processing channels
+        let channel_capacity = (document_paths.len() * 2).min(10000);
+        let (result_tx, result_rx) = mpsc::channel::<ProcessingResult>(channel_capacity);
+        
+        // Start result collector with enhanced buffering
         let output_dir = output_dir.to_owned();
         let collector_handle = tokio::spawn(async move {
-            Self::collect_results(result_rx, &output_dir).await
+            Self::collect_results_optimized(result_rx, &output_dir).await
         });
         
-        // Process documents with adaptive batching
-        let batch_size = self.calculate_optimal_batch_size(document_paths.len());
-        let batches: Vec<_> = document_paths.chunks(batch_size).collect();
+        // Adaptive concurrency based on M3 Max capabilities
+        let optimal_concurrency = self.calculate_m3_max_concurrency(document_paths.len());
+        info!("Using M3 Max optimized concurrency: {} parallel streams", optimal_concurrency);
         
-        info!("Processing {} batches with batch size {}", batches.len(), batch_size);
-        
-        // Process batches concurrently
-        let mut batch_handles = Vec::new();
-        for (batch_idx, batch) in batches.into_iter().enumerate() {
-            let batch_paths = batch.to_vec();
-            let processor = self.clone();
-            let tx = result_tx.clone();
-            
-            let handle = tokio::spawn(async move {
-                processor.process_batch(batch_idx, batch_paths, tx).await
-            });
-            
-            batch_handles.push(handle);
-        }
-        
-        // Drop the sender to signal completion
-        drop(result_tx);
-        
-        // Wait for all batches to complete
-        for handle in batch_handles {
-            if let Err(e) = handle.await? {
-                error!("Batch processing error: {}", e);
-            }
-        }
+        // Process documents with intelligent work distribution
+        let processing_stats = self.process_documents_m3_optimized(
+            document_paths,
+            result_tx,
+            optimal_concurrency
+        ).await?;
         
         // Wait for result collection to complete
         let collection_results = collector_handle.await??;
         
         let total_time = start_time.elapsed();
-        let stats = self.build_pipeline_stats(total_time, &collection_results);
+        let final_stats = self.build_enhanced_pipeline_stats(
+            total_time, 
+            &collection_results, 
+            processing_stats
+        );
         
-        info!("Directory processing completed in {:?}", total_time);
-        info!("Throughput: {:.2} docs/hour", stats.throughput_per_hour());
+        info!("M3 Max processing completed in {:?}", total_time);
+        info!("Throughput: {:.2} docs/hour (Target: 20-30)", final_stats.throughput_per_hour());
+        info!("Memory utilization: {:.2}GB peak", final_stats.memory_peak_gb);
         
-        Ok(stats)
+        // Log performance metrics for optimization tracking
+        self.log_performance_metrics(&final_stats).await;
+        
+        Ok(final_stats)
     }
     
     /// Process a batch of documents
@@ -648,7 +651,57 @@ impl DocumentProcessor {
         stats.errors_count += 1;
     }
     
-    /// Discover all processable documents in directory
+    /// Discover all processable documents in directory with parallel scanning
+    async fn discover_documents_parallel(&self, dir: &Path) -> Result<Vec<PathBuf>> {
+        use futures::stream::{self, StreamExt};
+        
+        let mut documents = Vec::new();
+        let mut dir_queue = vec![dir.to_owned()];
+        
+        // Process directories in parallel batches
+        while !dir_queue.is_empty() {
+            let current_batch: Vec<_> = dir_queue.drain(..).collect();
+            
+            let batch_results: Vec<_> = stream::iter(current_batch)
+                .map(|path| async move {
+                    let mut batch_documents = Vec::new();
+                    let mut batch_directories = Vec::new();
+                    
+                    if let Ok(mut entries) = fs::read_dir(&path).await {
+                        while let Some(entry) = entries.next_entry().await.unwrap_or(None) {
+                            let entry_path = entry.path();
+                            
+                            if entry_path.is_file() {
+                                if let Some(extension) = entry_path.extension().and_then(|e| e.to_str()) {
+                                    let ext_with_dot = format!(".{}", extension);
+                                    if self.config.processing.supported_extensions.contains(&ext_with_dot) {
+                                        batch_documents.push(entry_path);
+                                    }
+                                }
+                            } else if entry_path.is_dir() {
+                                batch_directories.push(entry_path);
+                            }
+                        }
+                    }
+                    
+                    (batch_documents, batch_directories)
+                })
+                .buffer_unordered(16) // Process up to 16 directories concurrently
+                .collect()
+                .await;
+            
+            // Collect results from batch processing
+            for (batch_docs, batch_dirs) in batch_results {
+                documents.extend(batch_docs);
+                dir_queue.extend(batch_dirs);
+            }
+        }
+        
+        info!("Parallel document discovery found {} files", documents.len());
+        Ok(documents)
+    }
+    
+    /// Legacy single-threaded document discovery for compatibility
     async fn discover_documents(&self, dir: &Path) -> Result<Vec<PathBuf>> {
         let mut documents = Vec::new();
         let mut entries = fs::read_dir(dir).await?;
@@ -697,7 +750,225 @@ impl DocumentProcessor {
         }
     }
     
-    /// Collect and aggregate processing results
+    /// Build enhanced pipeline statistics with M3 Max metrics
+    fn build_enhanced_pipeline_stats(
+        &self, 
+        total_time: Duration, 
+        collection_results: &CollectionResults,
+        processing_stats: M3ProcessingStats
+    ) -> PipelineStats {
+        let stats = self.stats.read();
+        PipelineStats {
+            documents_processed: stats.documents_processed,
+            total_qa_pairs_generated: stats.total_qa_pairs_generated,
+            average_quality: stats.average_quality,
+            total_time,
+            memory_peak_gb: processing_stats.peak_memory_gb,
+            errors_encountered: stats.errors_count,
+        }
+    }
+    
+    /// Calculate M3 Max optimized concurrency
+    fn calculate_m3_max_concurrency(&self, document_count: usize) -> usize {
+        let base_concurrency = if self.config.m3_optimization.use_all_performance_cores {
+            16 // M3 Max has 16 cores
+        } else {
+            8  // Use half the cores
+        };
+        
+        // Adaptive scaling based on document count and memory constraints
+        let memory_constrained_concurrency = 
+            (self.config.memory.memory_limit_gb * 1024 / 256).min(base_concurrency); // ~256MB per document
+        
+        let optimal_concurrency = std::cmp::min(
+            base_concurrency,
+            std::cmp::max(1, document_count / 4) // Don't over-parallelize small batches
+        ).min(memory_constrained_concurrency);
+        
+        info!("Calculated optimal concurrency: {} (base: {}, memory-constrained: {}, docs: {})",
+              optimal_concurrency, base_concurrency, memory_constrained_concurrency, document_count);
+        
+        optimal_concurrency
+    }
+    
+    /// Process documents with M3 Max optimization
+    async fn process_documents_m3_optimized(
+        &self,
+        document_paths: Vec<PathBuf>,
+        result_tx: mpsc::Sender<ProcessingResult>,
+        concurrency: usize
+    ) -> Result<M3ProcessingStats> {
+        use futures::stream::{self, StreamExt};
+        
+        let start_time = Instant::now();
+        let mut peak_memory_mb = 0;
+        let memory_monitor = Arc::new(AtomicUsize::new(0));
+        
+        // Create semaphore for concurrency control
+        let semaphore = Arc::new(Semaphore::new(concurrency));
+        
+        // Process documents in parallel streams with memory monitoring
+        let processing_results: Vec<_> = stream::iter(document_paths.into_iter().enumerate())
+            .map(|(idx, path)| {
+                let processor = self.clone();
+                let tx = result_tx.clone();
+                let sem = Arc::clone(&semaphore);
+                let mem_monitor = Arc::clone(&memory_monitor);
+                
+                async move {\n                    let _permit = sem.acquire().await.unwrap();\n                    \n                    // Monitor memory usage\n                    let memory_before = Self::get_current_memory_usage();\n                    mem_monitor.store(memory_before, Ordering::Relaxed);\n                    \n                    let result = processor.process_single_document(\n                        format!(\"doc-{}\", idx),\n                        path.clone(),\n                        tx\n                    ).await;\n                    \n                    let memory_after = Self::get_current_memory_usage();\n                    let memory_delta = memory_after.saturating_sub(memory_before);\n                    \n                    (result, memory_delta, path)\n                }\n            })\n            .buffer_unordered(concurrency)\n            .collect()\n            .await;\n        \n        // Calculate statistics\n        let mut successful_documents = 0;\n        let mut total_memory_used = 0;\n        let mut max_memory_delta = 0;\n        \n        for (result, memory_delta, path) in processing_results {\n            match result {\n                Ok(_) => {\n                    successful_documents += 1;\n                    total_memory_used += memory_delta;\n                    max_memory_delta = max_memory_delta.max(memory_delta);\n                }\n                Err(e) => {\n                    error!(\"Failed to process document {:?}: {}\", path, e);\n                }\n            }\n        }\n        \n        let processing_time = start_time.elapsed();\n        let peak_memory_gb = (memory_monitor.load(Ordering::Relaxed) as f64) / 1024.0 / 1024.0 / 1024.0;\n        \n        Ok(M3ProcessingStats {\n            successful_documents,\n            processing_time,\n            peak_memory_gb,\n            average_memory_per_doc_mb: if successful_documents > 0 {\n                total_memory_used / successful_documents\n            } else {\n                0\n            },\n            max_memory_delta_mb: max_memory_delta,\n            concurrency_used: concurrency,\n        })\n    }
+    
+    /// Get current memory usage in MB\n    fn get_current_memory_usage() -> usize {\n        // Simplified memory usage tracking\n        // In production, would use more sophisticated memory monitoring\n        static mut SYSTEM: Option<System> = None;\n        \n        unsafe {\n            if SYSTEM.is_none() {\n                SYSTEM = Some(System::new());\n            }\n            \n            if let Some(ref mut sys) = SYSTEM {\n                sys.refresh_memory();\n                (sys.used_memory() / 1024 / 1024) as usize // Convert to MB\n            } else {\n                0\n            }\n        }\n    }\n    \n    /// Log system information for optimization tracking\n    async fn log_system_information(&self) {\n        let mut sys = System::new();\n        sys.refresh_all();\n        \n        info!(\"=== M3 Max System Information ===\");\n        info!(\"Total memory: {:.2}GB\", sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0);\n        info!(\"Available memory: {:.2}GB\", sys.available_memory() as f64 / 1024.0 / 1024.0 / 1024.0);\n        info!(\"CPU cores: {}\", sys.cpus().len());\n        info!(\"Configured memory limit: {}GB\", self.config.memory.memory_limit_gb);\n        info!(\"Thread pool size: {}\", self.config.get_optimal_thread_count());\n        info!(\"====================================\");\n    }\n    \n    /// Log performance metrics for optimization tracking\n    async fn log_performance_metrics(&self, stats: &PipelineStats) {\n        info!(\"=== Performance Metrics ===\");\n        info!(\"Documents processed: {}\", stats.documents_processed);\n        info!(\"QA pairs generated: {}\", stats.total_qa_pairs_generated);\n        info!(\"Average quality: {:.3}\", stats.average_quality);\n        info!(\"Total processing time: {:?}\", stats.total_time);\n        info!(\"Throughput: {:.2} docs/hour\", stats.throughput_per_hour());\n        info!(\"Memory peak: {:.2}GB\", stats.memory_peak_gb);\n        info!(\"Errors: {}\", stats.errors_encountered);\n        info!(\"========================\");\n        \n        // Performance target analysis\n        let target_throughput = 25.0; // 20-30 docs/hour target\n        let actual_throughput = stats.throughput_per_hour();\n        \n        if actual_throughput >= target_throughput {\n            info!(\"✅ Performance target achieved: {:.2} >= {:.2} docs/hour\", \n                  actual_throughput, target_throughput);\n        } else {\n            warn!(\"⚠️ Below performance target: {:.2} < {:.2} docs/hour\", \n                  actual_throughput, target_throughput);\n        }\n        \n        // Memory utilization analysis\n        let target_memory_utilization = 0.90; // 90% target\n        let actual_utilization = stats.memory_peak_gb / (self.config.memory.memory_limit_gb as f64);\n        \n        if actual_utilization >= target_memory_utilization {\n            info!(\"✅ Memory utilization target achieved: {:.1}% >= {:.1}%\", \n                  actual_utilization * 100.0, target_memory_utilization * 100.0);\n        } else {\n            info!(\"📊 Memory utilization: {:.1}% (target: {:.1}%)\", \n                  actual_utilization * 100.0, target_memory_utilization * 100.0);\n        }\n    }
+    
+    /// Collect and aggregate processing results with optimization
+    async fn collect_results_optimized(
+        mut receiver: mpsc::Receiver<ProcessingResult>,
+        output_dir: &Path
+    ) -> Result<CollectionResults> {
+        use tokio::io::AsyncWriteExt;
+        
+        let mut results = Vec::new();
+        let training_data_path = output_dir.join("training_data.jsonl");
+        let quality_report_path = output_dir.join("quality_report.json");
+        let performance_log_path = output_dir.join("performance.log");
+        
+        // Create output files with buffering for better I/O performance
+        let training_file = fs::File::create(&training_data_path).await?;
+        let mut training_writer = tokio::io::BufWriter::new(training_file);
+        
+        let mut quality_data = Vec::new();
+        let mut performance_metrics = Vec::new();
+        let mut batch_buffer = Vec::new();
+        const BATCH_SIZE: usize = 100;
+        
+        info!("Starting optimized result collection");
+        let collection_start = Instant::now();
+        
+        // Collect all results with batched I/O
+        while let Some(result) = receiver.recv().await {
+            batch_buffer.push(result);
+            
+            // Process batch when it reaches optimal size
+            if batch_buffer.len() >= BATCH_SIZE {
+                Self::process_result_batch(
+                    &mut batch_buffer,
+                    &mut training_writer,
+                    &mut quality_data,
+                    &mut performance_metrics,
+                    &mut results
+                ).await?;
+            }
+        }
+        
+        // Process remaining results
+        if !batch_buffer.is_empty() {
+            Self::process_result_batch(
+                &mut batch_buffer,
+                &mut training_writer,
+                &mut quality_data,
+                &mut performance_metrics,
+                &mut results
+            ).await?;
+        }
+        
+        // Flush and close training data file
+        training_writer.flush().await?;
+        drop(training_writer);
+        
+        // Write quality report
+        let quality_report = serde_json::to_string_pretty(&quality_data)?;
+        fs::write(&quality_report_path, quality_report).await?;
+        
+        // Write performance log
+        let performance_report = serde_json::to_string_pretty(&performance_metrics)?;
+        fs::write(&performance_log_path, performance_report).await?;
+        
+        let collection_time = collection_start.elapsed();
+        info!("Optimized result collection completed in {:?}: {} documents processed", 
+              collection_time, results.len());
+        
+        Ok(CollectionResults {
+            total_results: results.len(),
+            training_data_path,
+            quality_report_path,
+        })
+    }
+    
+    /// Process a batch of results efficiently
+    async fn process_result_batch(
+        batch: &mut Vec<ProcessingResult>,
+        training_writer: &mut tokio::io::BufWriter<fs::File>,
+        quality_data: &mut Vec<serde_json::Value>,
+        performance_metrics: &mut Vec<serde_json::Value>,
+        results: &mut Vec<ProcessingResult>
+    ) -> Result<()> {
+        use tokio::io::AsyncWriteExt;
+        
+        for result in batch.drain(..) {
+            // Write QA pairs to training data file in batch
+            for qa_pair in &result.qa_pairs {
+                let training_entry = serde_json::json!({
+                    "conversation": [
+                        {"role": "user", "content": qa_pair.question},
+                        {"role": "assistant", "content": qa_pair.answer}
+                    ],
+                    "metadata": {
+                        "document_id": result.document_id,
+                        "quality_score": qa_pair.confidence,
+                        "complexity": qa_pair.metadata.complexity_level,
+                        "parameters": qa_pair.metadata.parameters_mentioned,
+                        "technical_terms": qa_pair.metadata.technical_terms,
+                        "feature_name": result.original_document.metadata.feature_name,
+                        "source_file": result.original_document.path.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("unknown")
+                    }
+                });
+                
+                let json_line = format!("{}\n", serde_json::to_string(&training_entry)?);
+                training_writer.write_all(json_line.as_bytes()).await?;
+            }
+            
+            // Collect quality data with enhanced metrics
+            quality_data.push(serde_json::json!({
+                "document_id": result.document_id,
+                "document_path": result.original_document.path,
+                "structural_quality": result.structural_quality,
+                "semantic_quality": result.semantic_quality,
+                "combined_quality": result.combined_quality_score,
+                "qa_pairs_generated": result.qa_pairs.len(),
+                "processing_stats": result.processing_stats,
+                "feature_metadata": {
+                    "feature_name": result.original_document.metadata.feature_name,
+                    "parameters_count": result.original_document.metadata.parameters.len(),
+                    "counters_count": result.original_document.metadata.counters.len(),
+                    "technical_terms_count": result.original_document.metadata.technical_terms.len(),
+                    "complexity_level": result.original_document.metadata.complexity_hints.estimated_complexity
+                }
+            }));
+            
+            // Collect performance metrics
+            performance_metrics.push(serde_json::json!({
+                "document_id": result.document_id,
+                "processing_time_ms": result.processing_stats.total_processing_time.as_millis(),
+                "rust_processing_time_ms": result.processing_stats.rust_processing_time.as_millis(),
+                "ml_processing_time_ms": result.processing_stats.ml_processing_time.as_millis(),
+                "memory_usage_mb": result.processing_stats.memory_peak_mb,
+                "model_used": result.processing_stats.model_used,
+                "document_size_bytes": result.original_document.size_bytes,
+                "throughput_chars_per_sec": if result.processing_stats.total_processing_time.as_secs() > 0 {
+                    result.original_document.size_bytes as f64 / result.processing_stats.total_processing_time.as_secs() as f64
+                } else {
+                    0.0
+                }
+            }));
+            
+            results.push(result);
+        }
+        
+        Ok(())
+    }
+    
+    /// Legacy result collection for compatibility
     async fn collect_results(
         mut receiver: mpsc::Receiver<ProcessingResult>,
         output_dir: &Path
