@@ -5,18 +5,19 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use parking_lot::Mutex;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    // collections::HashMap, // Unused
     sync::{
-        atomic::{AtomicBool, AtomicF64, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::Duration,
 };
-use prometheus::core::{Atomic, AtomicF64};
+// use prometheus::core::{Atomic, AtomicF64}; // Not available in std
 use tokio::{sync::broadcast, time};
 
 use crate::{
@@ -415,6 +416,9 @@ impl AdaptiveOptimizer {
         }
 
         result.execution_time = start_time.elapsed();
+        let execution_time = result.execution_time;
+        let success = result.success;
+        let error_message = result.error_message.clone();
         
         // Record result
         {
@@ -425,12 +429,12 @@ impl AdaptiveOptimizer {
             }
         }
 
-        if result.success {
+        if success {
             tracing::info!("Optimization {} completed successfully in {:?}", 
-                          optimization.id, result.execution_time);
+                          optimization.id, execution_time);
         } else {
             tracing::error!("Optimization {} failed: {:?}", 
-                           optimization.id, result.error_message);
+                           optimization.id, error_message);
         }
 
         Ok(())
@@ -628,17 +632,17 @@ impl ConcurrencyController {
 
 #[derive(Debug, Clone)]
 struct MemoryBalancer {
-    rust_pool_size: AtomicF64,
-    python_pool_size: AtomicF64,
-    shared_pool_size: AtomicF64,
+    rust_pool_size: Arc<Mutex<f64>>,
+    python_pool_size: Arc<Mutex<f64>>,
+    shared_pool_size: Arc<Mutex<f64>>,
 }
 
 impl MemoryBalancer {
     fn new() -> Self {
         Self {
-            rust_pool_size: AtomicF64::new(60.0),
-            python_pool_size: AtomicF64::new(45.0),
-            shared_pool_size: AtomicF64::new(15.0),
+            rust_pool_size: Arc::new(Mutex::new(60.0)),
+            python_pool_size: Arc::new(Mutex::new(45.0)),
+            shared_pool_size: Arc::new(Mutex::new(15.0)),
         }
     }
 
@@ -648,21 +652,21 @@ impl MemoryBalancer {
                 "rust_pool_size" => {
                     if let Some(size_str) = value.strip_suffix("GB") {
                         if let Ok(size) = size_str.parse::<f64>() {
-                            self.rust_pool_size.store(size, Ordering::Relaxed);
+                            *self.rust_pool_size.lock() = size;
                         }
                     }
                 },
                 "python_pool_size" => {
                     if let Some(size_str) = value.strip_suffix("GB") {
                         if let Ok(size) = size_str.parse::<f64>() {
-                            self.python_pool_size.store(size, Ordering::Relaxed);
+                            *self.python_pool_size.lock() = size;
                         }
                     }
                 },
                 "shared_pool_size" => {
                     if let Some(size_str) = value.strip_suffix("GB") {
                         if let Ok(size) = size_str.parse::<f64>() {
-                            self.shared_pool_size.store(size, Ordering::Relaxed);
+                            *self.shared_pool_size.lock() = size;
                         }
                     }
                 },
@@ -671,9 +675,9 @@ impl MemoryBalancer {
         }
 
         tracing::info!("Memory pools rebalanced: Rust={:.1}GB, Python={:.1}GB, Shared={:.1}GB",
-                      self.rust_pool_size.load(Ordering::Relaxed),
-                      self.python_pool_size.load(Ordering::Relaxed),
-                      self.shared_pool_size.load(Ordering::Relaxed));
+                      *self.rust_pool_size.lock(),
+                      *self.python_pool_size.lock(),
+                      *self.shared_pool_size.lock());
         Ok(())
     }
 }

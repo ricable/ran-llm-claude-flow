@@ -22,7 +22,7 @@ current_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(current_dir / "src" / "python-ml"))
 
 # Import our modules
-from model_management.qwen3_variants import Qwen3VariantsManager
+from model_management.qwen3_variants import Qwen3ModelManager
 from embeddings.sentence_transformer_manager import SentenceTransformerManager
 from dataset_generation.enhanced_pipeline import EnhancedDatasetPipeline
 from integration.rust_ipc_bridge import RustIPCBridge
@@ -153,7 +153,7 @@ Supports SRVCC handovers and emergency calls.
                 "unified_memory_gb": 45
             }
             
-            self.qwen3_manager = Qwen3VariantsManager(config)
+            self.qwen3_manager = Qwen3ModelManager(config)
             
             # Test model availability detection
             available_models = await self.qwen3_manager.get_available_models()

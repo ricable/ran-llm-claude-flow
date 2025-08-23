@@ -1,0 +1,37 @@
+[package]
+name = "rust-ml-integration-tests"
+version = "0.1.0"
+edition = "2021"
+authors = ["Claude Code <noreply@anthropic.com>"]
+description = "ML integration tests for Rust core pipeline"
+
+[dependencies]
+tokio = { version = "1.35", features = ["full", "test-util"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tempfile = "3.8"
+rand = "0.8"
+
+# Reference to the integrated pipeline components
+rust-core = { path = "../../integrated_pipeline/rust_core" }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+test-case = "3.3"
+mockall = "0.12"
+
+[lib]
+name = "rust_ml_integration_tests"
+path = "lib.rs"
+
+[[test]]
+name = "ml_integration"
+path = "test_ml_integration.rs"
+
+[profile.test]
+opt-level = 1
+debug = true

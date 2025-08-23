@@ -25,7 +25,7 @@ pub use bottleneck_analyzer::{Bottleneck, BottleneckType, BottleneckSeverity};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+// use std::collections::HashMap; // Unused
 use uuid::Uuid;
 
 /// Core monitoring system coordinator with Phase 2 MCP features

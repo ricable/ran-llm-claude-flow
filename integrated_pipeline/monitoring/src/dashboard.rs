@@ -124,8 +124,8 @@ impl DashboardServer {
                 let collector = metrics_collector.clone();
                 async move {
                     match collector.get_current_metrics().await {
-                        Ok(metrics) => Ok(warp::reply::json(&ApiResponse::success(metrics))),
-                        Err(e) => Ok(warp::reply::json(&ApiResponse::<()>::error(&e.to_string()))),
+                        Ok(metrics) => Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::success(metrics))),
+                        Err(e) => Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::<()>::error(&e.to_string()))),
                     }
                 }
             });
@@ -138,8 +138,8 @@ impl DashboardServer {
                 let analyzer = bottleneck_analyzer_clone.clone();
                 async move {
                     match analyzer.detect_current_bottlenecks().await {
-                        Ok(bottlenecks) => Ok(warp::reply::json(&ApiResponse::success(bottlenecks))),
-                        Err(e) => Ok(warp::reply::json(&ApiResponse::<()>::error(&e.to_string()))),
+                        Ok(bottlenecks) => Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::success(bottlenecks))),
+                        Err(e) => Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::<()>::error(&e.to_string()))),
                     }
                 }
             });
@@ -152,8 +152,8 @@ impl DashboardServer {
                 let optimizer = adaptive_optimizer_clone.clone();
                 async move {
                     match optimizer.get_active_optimizations().await {
-                        Ok(optimizations) => Ok(warp::reply::json(&ApiResponse::success(optimizations))),
-                        Err(e) => Ok(warp::reply::json(&ApiResponse::<()>::error(&e.to_string()))),
+                        Ok(optimizations) => Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::success(optimizations))),
+                        Err(e) => Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::<()>::error(&e.to_string()))),
                     }
                 }
             });

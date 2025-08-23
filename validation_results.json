@@ -30,7 +30,7 @@
       },
       "types.rs": {
         "exists": true,
-        "size_kb": 10.3,
+        "size_kb": 10.4,
         "status": "\u2705"
       },
       "document_processor.rs": {
@@ -57,7 +57,7 @@
       },
       "tests/rust/test_ml_integration.rs": {
         "exists": true,
-        "size_kb": 19.0,
+        "size_kb": 11.6,
         "status": "\u2705"
       },
       "tests/python/test_qwen3_variants.py": {
@@ -101,5 +101,5 @@
     "architecture_score": 100.0,
     "overall_score": 88.23529411764706
   },
-  "timestamp": 1755977329.728508
+  "timestamp": 1755978318.866781
 }

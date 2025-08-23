@@ -5,18 +5,17 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use dashmap::DashMap;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, Mutex};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
     sync::{
-        atomic::{AtomicBool, AtomicF64, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, Instant},
 };
-use prometheus::core::{Atomic, AtomicF64};
+// use prometheus::core::{Atomic, AtomicF64}; // Not available in std
 use systemstat::{Platform, System};
 use tokio::{sync::broadcast, time};
 
@@ -38,10 +37,10 @@ pub struct MetricsCollector {
     inference_requests: AtomicU64,
     errors_total: AtomicU64,
     
-    // Real-time gauges
-    current_document_rate: AtomicF64,
-    current_ipc_latency: AtomicF64,
-    current_memory_usage: AtomicF64,
+    // Real-time gauges (using Mutex for f64 values)
+    current_document_rate: Arc<Mutex<f64>>,
+    current_ipc_latency: Arc<Mutex<f64>>,
+    current_memory_usage: Arc<Mutex<f64>>,
 }
 
 impl MetricsCollector {
@@ -60,9 +59,9 @@ impl MetricsCollector {
             ipc_messages_received: AtomicU64::new(0),
             inference_requests: AtomicU64::new(0),
             errors_total: AtomicU64::new(0),
-            current_document_rate: AtomicF64::new(0.0),
-            current_ipc_latency: AtomicF64::new(0.0),
-            current_memory_usage: AtomicF64::new(0.0),
+            current_document_rate: Arc::new(Mutex::new(0.0)),
+            current_ipc_latency: Arc::new(Mutex::new(0.0)),
+            current_memory_usage: Arc::new(Mutex::new(0.0)),
         })
     }
 
@@ -143,8 +142,8 @@ impl MetricsCollector {
         metrics.errors_total = self.errors_total.load(Ordering::Relaxed);
 
         // Calculate rates
-        metrics.document_processing_rate = self.current_document_rate.load(Ordering::Relaxed);
-        metrics.ipc_latency_p99 = self.current_ipc_latency.load(Ordering::Relaxed);
+        metrics.document_processing_rate = *self.current_document_rate.lock();
+        metrics.ipc_latency_p99 = *self.current_ipc_latency.lock();
 
         Ok(())
     }
@@ -198,9 +197,11 @@ impl MetricsCollector {
         let mut total_rx = 0;
         let mut total_tx = 0;
         
-        for (_name, network) in networks {
-            total_rx += network.rx_bytes.as_u64();
-            total_tx += network.tx_bytes.as_u64();
+        for (_name, _network) in networks {
+            // Network statistics API varies by platform and systemstat version
+            // TODO: Implement platform-specific network stats
+            total_rx += 0; // Placeholder - would need platform-specific implementation
+            total_tx += 0; // Placeholder - would need platform-specific implementation
         }
 
         Ok(NetworkMetrics {
@@ -208,7 +209,7 @@ impl MetricsCollector {
             bytes_sent: total_tx,
             packets_received: 0, // TODO: get packet stats
             packets_sent: 0,
-            ipc_latency_avg_ms: self.current_ipc_latency.load(Ordering::Relaxed),
+            ipc_latency_avg_ms: *self.current_ipc_latency.lock(),
             ipc_bandwidth_mbps: self.calculate_ipc_bandwidth().await,
         })
     }
@@ -227,7 +228,7 @@ impl MetricsCollector {
     }
 
     pub fn record_ipc_latency(&self, latency_ms: f64) {
-        self.current_ipc_latency.store(latency_ms, Ordering::Relaxed);
+        *self.current_ipc_latency.lock() = latency_ms;
     }
 
     pub async fn get_current_metrics(&self) -> Result<SystemMetrics> {
@@ -247,9 +248,9 @@ impl MetricsCollector {
             ipc_messages_received: AtomicU64::new(self.ipc_messages_received.load(Ordering::Relaxed)),
             inference_requests: AtomicU64::new(self.inference_requests.load(Ordering::Relaxed)),
             errors_total: AtomicU64::new(self.errors_total.load(Ordering::Relaxed)),
-            current_document_rate: AtomicF64::new(self.current_document_rate.load(Ordering::Relaxed)),
-            current_ipc_latency: AtomicF64::new(self.current_ipc_latency.load(Ordering::Relaxed)),
-            current_memory_usage: AtomicF64::new(self.current_memory_usage.load(Ordering::Relaxed)),
+            current_document_rate: Arc::new(Mutex::new(*self.current_document_rate.lock())),
+            current_ipc_latency: Arc::new(Mutex::new(*self.current_ipc_latency.lock())),
+            current_memory_usage: Arc::new(Mutex::new(*self.current_memory_usage.lock())),
         }
     }
 

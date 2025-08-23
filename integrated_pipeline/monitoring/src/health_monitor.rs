@@ -5,18 +5,18 @@
 //! intelligent alert reduction with 80% noise reduction.
 
 use anyhow::Result;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
     sync::{
-        atomic::{AtomicBool, AtomicF64, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
-use prometheus::core::{Atomic, AtomicF64};
+// use prometheus::core::{Atomic, AtomicF64}; // Not available in std
 use tokio::{sync::broadcast, time};
 use uuid::Uuid;
 

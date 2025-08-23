@@ -128,3 +128,37 @@
 2025-08-23 19:44:28,943 - IntegrationTest - INFO - run_test:115 - Starting test: high_load_ipc
 2025-08-23 19:44:28,944 - IntegrationTest - INFO - test_high_load_ipc:183 - Testing IPC under high load...
 2025-08-23 19:44:58,945 - IntegrationTest - INFO - run_test:144 - Test PASSED: high_load_ipc (30001.68ms)
+2025-08-23 21:37:31,654 - IntegrationTest - INFO - run_test:115 - Starting test: mcp_server_startup
+2025-08-23 21:37:31,654 - IntegrationTest - INFO - test_mcp_server_startup:35 - Testing MCP server startup...
+2025-08-23 21:37:33,864 - IntegrationTest - ERROR - test_mcp_server_startup:62 - MCP server startup test failed: object int can't be used in 'await' expression
+2025-08-23 21:37:33,865 - IntegrationTest - ERROR - run_test:160 - Test FAILED: mcp_server_startup - object int can't be used in 'await' expression
+2025-08-23 21:37:33,871 - IntegrationTest - INFO - run_test:115 - Starting test: mcp_message_protocol
+2025-08-23 21:37:33,871 - IntegrationTest - INFO - test_mcp_message_protocol:67 - Testing MCP message protocol...
+2025-08-23 21:37:33,892 - IntegrationTest - ERROR - test_mcp_message_protocol:142 - MCP message protocol test failed: Multiple exceptions: [Errno 61] Connect call failed ('127.0.0.1', 8765), [Errno 61] Connect call failed ('::1', 8765, 0, 0)
+2025-08-23 21:37:33,892 - IntegrationTest - ERROR - run_test:160 - Test FAILED: mcp_message_protocol - Multiple exceptions: [Errno 61] Connect call failed ('127.0.0.1', 8765), [Errno 61] Connect call failed ('::1', 8765, 0, 0)
+2025-08-23 21:37:33,896 - IntegrationTest - INFO - run_test:115 - Starting test: rust_python_mcp_coordination
+2025-08-23 21:37:33,896 - IntegrationTest - INFO - test_rust_python_mcp_coordination:147 - Testing Rust-Python MCP coordination...
+2025-08-23 21:37:36,928 - IntegrationTest - ERROR - test_rust_python_mcp_coordination:192 - Rust-Python MCP coordination test failed: object int can't be used in 'await' expression
+2025-08-23 21:37:36,929 - IntegrationTest - ERROR - run_test:160 - Test FAILED: rust_python_mcp_coordination - object int can't be used in 'await' expression
+2025-08-23 21:37:36,936 - IntegrationTest - INFO - run_test:115 - Starting test: mcp_high_throughput
+2025-08-23 21:37:36,936 - IntegrationTest - INFO - test_mcp_high_throughput:197 - Testing MCP high throughput...
+2025-08-23 21:37:36,938 - IntegrationTest - ERROR - test_mcp_high_throughput:254 - MCP high throughput test failed: Multiple exceptions: [Errno 61] Connect call failed ('127.0.0.1', 8765), [Errno 61] Connect call failed ('::1', 8765, 0, 0)
+2025-08-23 21:37:36,938 - IntegrationTest - ERROR - run_test:160 - Test FAILED: mcp_high_throughput - Multiple exceptions: [Errno 61] Connect call failed ('127.0.0.1', 8765), [Errno 61] Connect call failed ('::1', 8765, 0, 0)
+2025-08-23 21:37:36,942 - IntegrationTest - INFO - run_test:115 - Starting test: mcp_error_handling
+2025-08-23 21:37:36,942 - IntegrationTest - INFO - test_mcp_error_handling:259 - Testing MCP error handling...
+2025-08-23 21:37:36,942 - IntegrationTest - ERROR - test_mcp_error_handling:308 - MCP error handling test failed: Multiple exceptions: [Errno 61] Connect call failed ('127.0.0.1', 8765), [Errno 61] Connect call failed ('::1', 8765, 0, 0)
+2025-08-23 21:37:36,942 - IntegrationTest - ERROR - run_test:160 - Test FAILED: mcp_error_handling - Multiple exceptions: [Errno 61] Connect call failed ('127.0.0.1', 8765), [Errno 61] Connect call failed ('::1', 8765, 0, 0)
+2025-08-23 21:37:36,946 - IntegrationTest - INFO - run_test:115 - Starting test: baseline_performance
+2025-08-23 21:37:36,946 - IntegrationTest - INFO - test_baseline_performance:36 - Testing baseline performance...
+2025-08-23 21:37:39,047 - IntegrationTest - INFO - run_test:144 - Test PASSED: baseline_performance (2101.01ms)
+2025-08-23 21:37:39,053 - IntegrationTest - INFO - run_test:115 - Starting test: m3_max_optimized_performance
+2025-08-23 21:37:39,053 - IntegrationTest - INFO - test_m3_max_optimized_performance:72 - Testing M3 Max optimized performance...
+2025-08-23 21:37:39,074 - IntegrationTest - INFO - run_test:144 - Test PASSED: m3_max_optimized_performance (20.40ms)
+2025-08-23 21:37:39,076 - IntegrationTest - INFO - run_test:115 - Starting test: parallel_processing_scaling
+2025-08-23 21:37:39,076 - IntegrationTest - INFO - test_parallel_processing_scaling:108 - Testing parallel processing scaling...
+2025-08-23 21:37:39,327 - IntegrationTest - INFO - run_test:144 - Test PASSED: parallel_processing_scaling (250.50ms)
+2025-08-23 21:37:39,327 - IntegrationTest - INFO - run_test:115 - Starting test: memory_intensive_workload
+2025-08-23 21:37:39,327 - IntegrationTest - INFO - test_memory_intensive_workload:147 - Testing memory-intensive workload...
+2025-08-23 21:37:53,359 - IntegrationTest - INFO - run_test:144 - Test PASSED: memory_intensive_workload (14031.41ms)
+2025-08-23 21:37:53,360 - IntegrationTest - INFO - run_test:115 - Starting test: sustained_performance
+2025-08-23 21:37:53,360 - IntegrationTest - INFO - test_sustained_performance:187 - Testing sustained performance...

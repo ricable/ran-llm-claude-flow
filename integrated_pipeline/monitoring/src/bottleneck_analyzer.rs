@@ -9,7 +9,7 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::VecDeque,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
@@ -122,20 +122,16 @@ impl BottleneckAnalyzer {
 
         let mut detected_bottlenecks = Vec::new();
 
-        // Analyze different bottleneck types in parallel
-        let bottleneck_checks = vec![
-            self.analyze_cpu_bottlenecks(&recent_metrics),
-            self.analyze_memory_bottlenecks(&recent_metrics),
-            self.analyze_io_bottlenecks(&recent_metrics),
-            self.analyze_ipc_bottlenecks(&recent_metrics),
-            self.analyze_pipeline_bottlenecks(&recent_metrics),
-        ];
+        // Analyze different bottleneck types sequentially since they have different async signatures
+        let mut bottleneck_checks = Vec::new();
+        bottleneck_checks.extend(self.analyze_cpu_bottlenecks(&recent_metrics)?);
+        bottleneck_checks.extend(self.analyze_memory_bottlenecks(&recent_metrics).await?);
+        bottleneck_checks.extend(self.analyze_io_bottlenecks(&recent_metrics)?);
+        bottleneck_checks.extend(self.analyze_ipc_bottlenecks(&recent_metrics)?);
+        bottleneck_checks.extend(self.analyze_pipeline_bottlenecks(&recent_metrics)?);
 
-        for bottleneck_result in futures::future::join_all(bottleneck_checks).await {
-            if let Ok(mut bottlenecks) = bottleneck_result {
-                detected_bottlenecks.append(&mut bottlenecks);
-            }
-        }
+        // All bottlenecks are already collected in bottleneck_checks
+        detected_bottlenecks = bottleneck_checks;
 
         // Update current state and notify
         {
@@ -165,7 +161,7 @@ impl BottleneckAnalyzer {
         }
 
         let avg_utilization = cpu_utilizations.iter().sum::<f32>() / cpu_utilizations.len() as f32;
-        let max_utilization = cpu_utilizations.iter().fold(0.0, |acc, &x| acc.max(x));
+        let max_utilization: f32 = cpu_utilizations.iter().fold(0.0, |acc, &x| acc.max(x));
 
         // High CPU utilization bottleneck
         if avg_utilization > 85.0 {
@@ -176,7 +172,7 @@ impl BottleneckAnalyzer {
                 detected_at: Utc::now(),
                 description: format!("High CPU utilization: avg={:.1}%, max={:.1}%", 
                                    avg_utilization, max_utilization),
-                impact_score: (avg_utilization - 70.0) / 30.0, // 0-1 scale
+                impact_score: ((avg_utilization - 70.0) / 30.0) as f64, // 0-1 scale
                 suggested_actions: vec![
                     "Consider increasing CPU allocation".to_string(),
                     "Optimize CPU-intensive algorithms".to_string(),
@@ -200,7 +196,7 @@ impl BottleneckAnalyzer {
                     detected_at: Utc::now(),
                     description: format!("CPU thermal throttling: {:.1}°C", 
                                        latest.cpu_usage.temperature_celsius),
-                    impact_score: (latest.cpu_usage.temperature_celsius - 70.0) / 30.0,
+                    impact_score: ((latest.cpu_usage.temperature_celsius - 70.0) / 30.0) as f64,
                     suggested_actions: vec![
                         "Check cooling system".to_string(),
                         "Reduce CPU-intensive workload".to_string(),
