@@ -96,19 +96,20 @@ mockall = "0.12"
 
 [lib]
 name = "ran_document_pipeline"
-path = "lib.rs"
+path = "src/lib.rs"
 
 [[bin]]
 name = "pipeline-coordinator"
 path = "io/pipeline_coordinator.rs"
 
-[[bench]]
-name = "document_processing_bench"
-harness = false
+# Benchmarks disabled until bench files are created
+# [[bench]]
+# name = "document_processing_bench"
+# harness = false
 
-[[bench]]
-name = "streaming_performance"
-harness = false
+# [[bench]]
+# name = "streaming_performance"
+# harness = false
 
 [profile.release]
 # Maximum optimization for production processing

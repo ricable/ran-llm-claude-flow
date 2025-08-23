@@ -1,0 +1,1 @@
+cargo:rustc-env=MIME_TYPES_GENERATED_PATH=/Users/cedric/orange/ran-llm-claude-flow/src/rust-pipeline/target/debug/build/mime_guess-4db6759655028c8f/out/mime_types_generated.rs

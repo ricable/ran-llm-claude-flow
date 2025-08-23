@@ -1,0 +1,220 @@
+# Dynamic Scaling Configuration
+# Phase 2 MCP Advanced Features - Scaling System Configuration
+# Comprehensive configuration for intelligent scaling and resource management
+
+# Main scaling system configuration
+scaling_system:
+  enable_auto_scaling: true
+  enable_workload_analysis: true
+  enable_resource_optimization: true
+  monitoring_interval_seconds: 10
+  scaling_decision_interval_seconds: 30
+  emergency_threshold_memory_percent: 95.0
+  emergency_threshold_cpu_percent: 98.0
+  max_agents: 12                    # M3 Max practical limit
+  min_agents: 2                     # Minimum for redundancy
+  target_throughput_docs_per_hour: 25.0
+
+# Dynamic scaling configuration
+dynamic_scaler:
+  target_cpu_utilization: 85.0       # Target CPU utilization percentage
+  target_memory_utilization: 90.0    # Target memory utilization percentage
+  scale_up_threshold: 80.0           # Scale up when above this threshold
+  scale_down_threshold: 50.0         # Scale down when below this threshold
+  cooldown_duration_seconds: 30      # Minimum time between scaling actions
+  prediction_window_size: 20         # Number of metrics to keep for prediction
+  memory_constraint_gb: 128.0        # M3 Max total memory
+  min_throughput_docs_per_hour: 20.0 # Minimum acceptable throughput
+  max_ipc_latency_ms: 5.0           # Maximum acceptable IPC latency
+  
+  # Advanced scaling parameters
+  scaling_sensitivity: 0.8           # How sensitive to load changes (0-1)
+  performance_weight: 0.6            # Weight for performance vs stability
+  conservative_mode: false           # Enable for more cautious scaling
+  emergency_scaling_enabled: true    # Enable emergency scaling under stress
+  
+# Workload analysis configuration
+workload_analyzer:
+  history_window_minutes: 60         # How far back to analyze patterns
+  pattern_detection_sensitivity: 0.7 # Sensitivity for pattern detection (0-1)
+  min_confidence_threshold: 0.6      # Minimum confidence to act on patterns
+  burst_detection_threshold: 2.0     # Multiplier for burst traffic detection
+  steady_state_variance_threshold: 0.2 # Variance threshold for steady state
+  memory_optimization_threshold: 0.85  # Memory usage threshold for optimization
+  
+  # Pattern-specific configurations
+  patterns:
+    burst_traffic:
+      max_agents: 8                  # Max agents for burst patterns
+      memory_buffer_gb: 10.0         # Extra memory buffer for bursts
+      scale_up_speed: "fast"         # How quickly to scale up
+      
+    batch_processing:
+      preferred_agents: 4            # Preferred agent count for batches
+      memory_allocation_gb: 70.0     # Memory allocation for batch processing
+      timeout_minutes: 30            # Batch processing timeout
+      
+    steady_state:
+      optimal_agents: 3              # Optimal agents for steady workload
+      memory_efficiency_target: 0.85 # Target memory efficiency
+      cpu_efficiency_target: 0.80   # Target CPU efficiency
+
+# Resource management configuration
+resource_manager:
+  total_memory_gb: 128.0             # M3 Max total memory
+  available_memory_gb: 120.0         # Available after OS reservation
+  reserved_memory_gb: 8.0            # Reserved for macOS
+  memory_safety_margin_gb: 5.0       # Safety margin for stability
+  cpu_cores: 16                      # M3 Max CPU cores
+  max_ipc_bandwidth_mbps: 10000.0    # Theoretical M3 Max maximum
+  
+  # Resource allocation policies
+  allocation_policies:
+    rust_processes:
+      base_memory_gb: 60.0           # Base memory for Rust processes
+      max_memory_gb: 80.0            # Maximum memory allocation
+      priority: "high"               # Resource priority
+      cpu_affinity: [0, 1, 2, 3, 4, 5, 6, 7]  # Preferred CPU cores
+      
+    python_processes:
+      base_memory_gb: 45.0           # Base memory for Python processes
+      max_memory_gb: 60.0            # Maximum memory allocation
+      priority: "high"               # Resource priority
+      cpu_affinity: [8, 9, 10, 11, 12, 13, 14, 15]  # Preferred CPU cores
+      
+    shared_memory:
+      base_memory_gb: 15.0           # Base shared memory
+      max_memory_gb: 25.0            # Maximum shared memory
+      priority: "critical"           # Critical for IPC
+      
+    monitoring_processes:
+      base_memory_gb: 2.0            # Base memory for monitoring
+      max_memory_gb: 5.0             # Maximum memory allocation
+      priority: "low"                # Lower priority
+      
+  # Rebalancing configuration
+  rebalancing:
+    enable_proactive_rebalancing: true
+    rebalance_interval_seconds: 60
+    memory_pressure_threshold: 85.0
+    cpu_imbalance_threshold: 20.0
+    min_rebalance_benefit: 0.05      # 5% minimum improvement
+    max_rebalance_frequency_per_hour: 6
+
+# Auto-adjustment configuration (Python component)
+auto_adjuster:
+  enable_auto_adjustment: true
+  optimization_strategy: "adaptive_learning"  # adaptive_learning, bayesian_optimization, etc.
+  conservative_mode: false
+  min_confidence_threshold: 0.7
+  max_performance_regression: 0.05   # Max 5% performance regression allowed
+  learning_rate: 0.1
+  exploration_rate: 0.1
+  
+  # Parameter bounds and constraints
+  parameter_bounds:
+    batch_size: [1, 256]
+    memory_allocation_gb: [10.0, 80.0]
+    concurrency_level: [1, 16]
+    cache_size_gb: [1.0, 20.0]
+    ipc_buffer_size_mb: [64, 1024]
+    quality_threshold: [0.5, 0.95]
+    
+  # Adjustment constraints
+  max_adjustments_per_hour: 10
+  adjustment_cooldown_minutes: 5
+  emergency_rollback_enabled: true
+  
+  # Initial parameter values
+  initial_parameters:
+    batch_size: 32
+    memory_allocation_gb: 60.0
+    concurrency_level: 4
+    cache_size_gb: 5.0
+    ipc_buffer_size_mb: 256
+    quality_threshold: 0.75
+
+# Performance targets and thresholds
+performance_targets:
+  throughput:
+    minimum_docs_per_hour: 20.0      # Below this triggers scaling up
+    target_docs_per_hour: 30.0       # Target performance
+    maximum_docs_per_hour: 50.0      # Above this may trigger scaling down
+    
+  latency:
+    maximum_avg_latency_ms: 500.0    # Maximum average latency
+    target_p95_latency_ms: 800.0     # Target P95 latency
+    maximum_p99_latency_ms: 1500.0   # Maximum P99 latency
+    
+  resource_utilization:
+    target_memory_utilization: 85.0  # Target memory utilization %
+    maximum_memory_utilization: 92.0 # Maximum before emergency scaling
+    target_cpu_utilization: 80.0     # Target CPU utilization %
+    maximum_cpu_utilization: 95.0    # Maximum before emergency scaling
+    
+  quality:
+    minimum_quality_score: 0.7       # Minimum acceptable quality
+    target_quality_score: 0.8        # Target quality score
+    maximum_error_rate: 2.0          # Maximum error rate %
+    
+  ipc:
+    maximum_ipc_latency_ms: 10.0     # Maximum IPC latency
+    target_ipc_throughput_mbps: 2000.0 # Target IPC throughput
+    minimum_shared_memory_efficiency: 0.8 # Minimum shared memory efficiency
+
+# Integration and communication
+integration:
+  mcp_server:
+    enable_mcp_reporting: true
+    reporting_interval_seconds: 30
+    websocket_endpoint: "ws://127.0.0.1:8000"
+    http_endpoint: "http://127.0.0.1:8001"
+    
+  python_integration:
+    auto_adjuster_script: "auto_adjuster.py"
+    communication_method: "ipc"      # ipc, http, websocket
+    command_timeout_seconds: 30
+    
+  monitoring_integration:
+    dashboard_updates: true
+    alert_thresholds:
+      cpu_utilization: 90.0
+      memory_utilization: 88.0
+      error_rate: 3.0
+      latency_p95: 1000.0
+      
+# Logging and debugging
+logging:
+  level: "info"                      # trace, debug, info, warn, error
+  structured_logging: true           # JSON structured logs
+  log_file: "./logs/scaling.log"
+  max_log_file_size_mb: 100
+  max_log_files: 5
+  
+  # Component-specific logging
+  components:
+    dynamic_scaler: "debug"
+    workload_analyzer: "info"
+    resource_manager: "info"
+    auto_adjuster: "info"
+    
+# Development and testing
+development:
+  simulation_mode: false             # Enable for testing without real scaling
+  mock_metrics: false                # Use mock metrics for testing
+  dry_run_scaling: false             # Log scaling decisions without applying
+  enable_performance_profiling: false
+  
+  # Testing overrides
+  test_scenarios:
+    burst_traffic:
+      duration_minutes: 5
+      peak_multiplier: 3.0
+      
+    memory_pressure:
+      target_utilization: 95.0
+      duration_minutes: 2
+      
+    emergency_scenario:
+      trigger_memory_threshold: 98.0
+      trigger_cpu_threshold: 99.0
