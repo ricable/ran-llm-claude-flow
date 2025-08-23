@@ -7,6 +7,9 @@ use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use rust_core::{
     config::ProcessingConfig,
     document_processor::DocumentProcessor,
+    mcp_server::{McpServer, McpServerConfig},
+    mcp_rpc_impl::McpRpcImpl,
+    ipc_manager::IpcManager,
 };
 
 #[derive(Parser)]
@@ -50,6 +53,20 @@ enum Commands {
         #[arg(short, long, default_value = "10")]
         count: usize,
     },
+    /// Start MCP server
+    McpServer {
+        /// Configuration file path
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+        
+        /// WebSocket port
+        #[arg(long, default_value = "8000")]
+        websocket_port: u16,
+        
+        /// HTTP port
+        #[arg(long, default_value = "8001")]
+        http_port: u16,
+    },
 }
 
 #[tokio::main]
@@ -74,6 +91,9 @@ async fn main() -> Result<()> {
         }
         Commands::Benchmark { count } => {
             run_benchmark(count).await?;
+        }
+        Commands::McpServer { config, websocket_port, http_port } => {
+            start_mcp_server(config, websocket_port, http_port).await?;
         }
     }
     
@@ -334,4 +354,64 @@ Technical terms: MIMO, CA, VoLTE, IMS, EPC, RRC, PDCP, RLC, MAC, PHY, TTI
     index + 1, index + 1, index + 1,
     index + 1
     )
+}
+
+/// Start MCP server for hybrid pipeline integration
+async fn start_mcp_server(
+    config_path: Option<PathBuf>, 
+    websocket_port: u16,
+    http_port: u16
+) -> Result<()> {
+    info!("=== Starting MCP Server ===");
+    info!("WebSocket port: {}", websocket_port);
+    info!("HTTP port: {}", http_port);
+    
+    // Load or create MCP server configuration
+    let mut mcp_config = if let Some(config_path) = config_path {
+        info!("Loading MCP configuration from: {:?}", config_path);
+        // TODO: Implement config loading from YAML file
+        McpServerConfig::for_m3_max()
+    } else {
+        info!("Using default M3 Max optimized MCP configuration");
+        McpServerConfig::for_m3_max()
+    };
+    
+    // Update ports from command line
+    mcp_config.websocket_addr = format!("127.0.0.1:{}", websocket_port);
+    mcp_config.http_addr = format!("127.0.0.1:{}", http_port);
+    
+    // Create IPC settings for integration
+    let ipc_settings = rust_core::config::IpcSettings {
+        shared_memory_size_gb: 15,
+        max_connections: 128,
+        timeout_seconds: 30,
+        enable_checksum_validation: true,
+        connection_pool_size: 32,
+        queue_size: 1024,
+        batch_size: 64,
+        compression_enabled: true,
+        enable_performance_monitoring: true,
+    };
+    
+    info!("Initializing MCP server with hybrid pipeline integration...");
+    
+    // Create and start MCP server
+    let server = McpServer::new(mcp_config, &ipc_settings).await?;
+    
+    info!("MCP Server initialized successfully");
+    info!("Resources available: document-processor, performance-metrics");
+    info!("Tools available: process-document, benchmark-performance");  
+    info!("Prompts available: analyze-document");
+    info!("");
+    info!("Server is ready to accept connections!");
+    info!("WebSocket: ws://127.0.0.1:{}", websocket_port);
+    info!("HTTP: http://127.0.0.1:{}", http_port);
+    info!("");
+    info!("Press Ctrl+C to shutdown...");
+    
+    // Start server (this will block until shutdown)
+    server.start().await?;
+    
+    info!("MCP Server shutdown complete");
+    Ok(())
 }

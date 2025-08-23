@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAN-LLM Performance Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            backdrop-filter: blur(10px);
+        }
+        .alert-critical { @apply bg-red-500 text-white; }
+        .alert-warning { @apply bg-yellow-500 text-black; }
+        .alert-info { @apply bg-blue-500 text-white; }
+        .chart-container {
+            position: relative;
+            height: 400px;
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .status-healthy { background-color: #10b981; }
+        .status-warning { background-color: #f59e0b; }
+        .status-critical { background-color: #ef4444; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .glass {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <!-- Header -->
+    <header class="bg-gray-800 shadow-lg p-4">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <h1 class="text-3xl font-bold text-blue-400">🚀 RAN-LLM Performance Dashboard</h1>
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2">
+                    <div id="connection-status" class="status-indicator status-healthy"></div>
+                    <span id="connection-text" class="text-sm">Connected</span>
+                </div>
+                <div class="text-sm text-gray-400">
+                    Last Update: <span id="last-update">--</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Dashboard -->
+    <main class="max-w-7xl mx-auto p-6">
+        <!-- System Overview Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <!-- M3 Max Memory Card -->
+            <div class="glass rounded-lg p-6 metric-card">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold">M3 Max Memory</h3>
+                    <div class="text-2xl">💾</div>
+                </div>
+                <div class="text-3xl font-bold mb-2" id="memory-usage">--</div>
+                <div class="text-sm opacity-80" id="memory-details">of 128GB used</div>
+                <div class="mt-4">
+                    <div class="w-full bg-gray-700 rounded-full h-2">
+                        <div id="memory-bar" class="bg-blue-400 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CPU Load Card -->
+            <div class="glass rounded-lg p-6 metric-card">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold">CPU Load</h3>
+                    <div class="text-2xl">⚡</div>
+                </div>
+                <div class="text-3xl font-bold mb-2" id="cpu-load">--</div>
+                <div class="text-sm opacity-80">P-cores: <span id="p-cores">8</span> | E-cores: <span id="e-cores">4</span></div>
+                <div class="mt-4">
+                    <div class="w-full bg-gray-700 rounded-full h-2">
+                        <div id="cpu-bar" class="bg-green-400 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Throughput Card -->
+            <div class="glass rounded-lg p-6 metric-card">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold">Throughput</h3>
+                    <div class="text-2xl">📊</div>
+                </div>
+                <div class="text-3xl font-bold mb-2" id="throughput">--</div>
+                <div class="text-sm opacity-80" id="throughput-details">docs/min</div>
+                <div class="mt-4">
+                    <div class="flex justify-between text-xs">
+                        <span>Queue: <span id="queue-depth">0</span></span>
+                        <span>Workers: <span id="active-workers">0</span></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Neural Engine Card -->
+            <div class="glass rounded-lg p-6 metric-card">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold">Neural Engine</h3>
+                    <div class="text-2xl">🧠</div>
+                </div>
+                <div class="text-3xl font-bold mb-2" id="neural-engine">--</div>
+                <div class="text-sm opacity-80">ML Inference Utilization</div>
+                <div class="mt-4">
+                    <div class="w-full bg-gray-700 rounded-full h-2">
+                        <div id="neural-bar" class="bg-purple-400 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- Memory Usage Chart -->
+            <div class="glass rounded-lg p-6">
+                <h3 class="text-xl font-semibold mb-4">Memory Usage Trend</h3>
+                <div class="chart-container">
+                    <canvas id="memoryChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Throughput Chart -->
+            <div class="glass rounded-lg p-6">
+                <h3 class="text-xl font-semibold mb-4">Processing Throughput</h3>
+                <div class="chart-container">
+                    <canvas id="throughputChart"></canvas>
+                </div>
+            </div>
+
+            <!-- CPU & Temperature Chart -->
+            <div class="glass rounded-lg p-6">
+                <h3 class="text-xl font-semibold mb-4">System Performance</h3>
+                <div class="chart-container">
+                    <canvas id="systemChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Error Rate & Success Rate Chart -->
+            <div class="glass rounded-lg p-6">
+                <h3 class="text-xl font-semibold mb-4">Pipeline Health</h3>
+                <div class="chart-container">
+                    <canvas id="healthChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alerts Panel -->
+        <div class="glass rounded-lg p-6 mb-8">
+            <h3 class="text-xl font-semibold mb-4">🚨 Active Alerts</h3>
+            <div id="alerts-container" class="space-y-3">
+                <div class="text-gray-400 text-center py-4">No active alerts</div>
+            </div>
+        </div>
+
+        <!-- Regression Analysis -->
+        <div class="glass rounded-lg p-6 mb-8">
+            <h3 class="text-xl font-semibold mb-4">📈 Regression Analysis</h3>
+            <div id="regression-container" class="space-y-4">
+                <div class="text-gray-400 text-center py-4">No regressions detected</div>
+            </div>
+        </div>
+
+        <!-- System Information -->
+        <div class="glass rounded-lg p-6">
+            <h3 class="text-xl font-semibold mb-4">🔧 System Information</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                    <h4 class="font-semibold text-blue-400 mb-2">M3 Max Specifications</h4>
+                    <ul class="text-sm space-y-1">
+                        <li>Unified Memory: <span id="sys-memory">128GB</span></li>
+                        <li>Memory Bandwidth: <span id="sys-bandwidth">800GB/s</span></li>
+                        <li>Neural Engine: <span id="sys-neural">16-core</span></li>
+                        <li>GPU Cores: <span id="sys-gpu">76</span></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-semibold text-green-400 mb-2">Pipeline Status</h4>
+                    <ul class="text-sm space-y-1">
+                        <li>Rust Core: <span id="rust-status" class="text-green-400">Running</span></li>
+                        <li>Python ML: <span id="python-status" class="text-green-400">Running</span></li>
+                        <li>IPC Bridge: <span id="ipc-status" class="text-green-400">Active</span></li>
+                        <li>MCP Server: <span id="mcp-status" class="text-green-400">Connected</span></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-semibold text-yellow-400 mb-2">Performance Targets</h4>
+                    <ul class="text-sm space-y-1">
+                        <li>Target: <span class="text-yellow-400">20-30 docs/hour</span></li>
+                        <li>Current: <span id="current-target">--</span></li>
+                        <li>Efficiency: <span id="efficiency">--</span></li>
+                        <li>Utilization: <span id="utilization">--</span></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Global variables
+        let memoryChart, throughputChart, systemChart, healthChart;
+        let ws;
+        let metricsData = {
+            timestamps: [],
+            memoryUsage: [],
+            cpuLoad: [],
+            throughput: [],
+            errorRate: [],
+            successRate: []
+        };
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeCharts();
+            connectWebSocket();
+            
+            // Periodic updates
+            setInterval(updateCharts, 1000);
+        });
+
+        // WebSocket connection
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = function() {
+                updateConnectionStatus(true);
+                console.log('Connected to performance dashboard WebSocket');
+            };
+            
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleMetricsUpdate(data);
+                } catch (e) {
+                    console.error('Failed to parse WebSocket message:', e);
+                }
+            };
+            
+            ws.onclose = function() {
+                updateConnectionStatus(false);
+                console.log('WebSocket connection closed. Attempting to reconnect...');
+                setTimeout(connectWebSocket, 5000);
+            };
+            
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus(false);
+            };
+        }
+
+        // Handle metrics updates
+        function handleMetricsUpdate(data) {
+            if (data.type === 'metrics_update') {
+                updateMetricCards(data);
+                updateMetricsData(data);
+                document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+            } else if (data.type === 'alert') {
+                addAlert(data);
+            }
+        }
+
+        // Update metric cards
+        function updateMetricCards(data) {
+            if (data.m3_max) {
+                const memUsagePercent = (data.m3_max.unified_memory_used / data.m3_max.unified_memory_total) * 100;
+                const memUsageGB = (data.m3_max.unified_memory_used / (1024 * 1024 * 1024)).toFixed(1);
+                
+                document.getElementById('memory-usage').textContent = `${memUsagePercent.toFixed(1)}%`;
+                document.getElementById('memory-details').textContent = `${memUsageGB}GB of 128GB used`;
+                document.getElementById('memory-bar').style.width = `${memUsagePercent}%`;
+                
+                document.getElementById('cpu-load').textContent = `${(data.m3_max.cpu_load * 100).toFixed(1)}%`;
+                document.getElementById('cpu-bar').style.width = `${data.m3_max.cpu_load * 100}%`;
+                
+                document.getElementById('neural-engine').textContent = `${data.m3_max.neural_engine_utilization.toFixed(1)}%`;
+                document.getElementById('neural-bar').style.width = `${data.m3_max.neural_engine_utilization}%`;
+            }
+            
+            if (data.throughput) {
+                document.getElementById('throughput').textContent = data.throughput.documents_per_minute.toFixed(1);
+                document.getElementById('queue-depth').textContent = data.throughput.queue_depth;
+                document.getElementById('active-workers').textContent = data.throughput.active_workers;
+                
+                // Update performance targets
+                const efficiency = (data.throughput.documents_per_minute / 30 * 100).toFixed(1);
+                document.getElementById('current-target').textContent = `${data.throughput.documents_per_minute.toFixed(1)} docs/hour`;
+                document.getElementById('efficiency').textContent = `${efficiency}%`;
+            }
+        }
+
+        // Update connection status
+        function updateConnectionStatus(connected) {
+            const statusIndicator = document.getElementById('connection-status');
+            const statusText = document.getElementById('connection-text');
+            
+            if (connected) {
+                statusIndicator.className = 'status-indicator status-healthy';
+                statusText.textContent = 'Connected';
+            } else {
+                statusIndicator.className = 'status-indicator status-critical';
+                statusText.textContent = 'Disconnected';
+            }
+        }
+
+        // Add alert to dashboard
+        function addAlert(alert) {
+            const alertsContainer = document.getElementById('alerts-container');
+            
+            if (alertsContainer.children.length === 1 && alertsContainer.children[0].textContent.includes('No active alerts')) {
+                alertsContainer.innerHTML = '';
+            }
+            
+            const alertDiv = document.createElement('div');
+            const severityClass = alert.severity.toLowerCase() === 'critical' ? 'alert-critical' : 
+                                 alert.severity.toLowerCase() === 'warning' ? 'alert-warning' : 'alert-info';
+            
+            alertDiv.className = `p-4 rounded-lg ${severityClass}`;
+            alertDiv.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="font-semibold">${alert.component}</div>
+                        <div class="text-sm">${alert.message}</div>
+                        <div class="text-xs mt-1">Value: ${alert.value.toFixed(2)} | Threshold: ${alert.threshold}</div>
+                    </div>
+                    <div class="text-sm">${new Date(alert.timestamp).toLocaleTimeString()}</div>
+                </div>
+            `;
+            
+            alertsContainer.appendChild(alertDiv);
+            
+            // Remove old alerts (keep only last 10)
+            while (alertsContainer.children.length > 10) {
+                alertsContainer.removeChild(alertsContainer.firstChild);
+            }
+        }
+
+        // Initialize charts
+        function initializeCharts() {
+            const chartOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: 'white' }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: 'white' },
+                        grid: { color: 'rgba(255,255,255,0.1)' }
+                    },
+                    y: {
+                        ticks: { color: 'white' },
+                        grid: { color: 'rgba(255,255,255,0.1)' }
+                    }
+                }
+            };
+
+            // Memory Chart
+            memoryChart = new Chart(document.getElementById('memoryChart'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Memory Usage %',
+                        data: [],
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true
+                    }]
+                },
+                options: chartOptions
+            });
+
+            // Throughput Chart
+            throughputChart = new Chart(document.getElementById('throughputChart'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Documents/min',
+                        data: [],
+                        borderColor: 'rgb(16, 185, 129)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        fill: true
+                    }]
+                },
+                options: chartOptions
+            });
+
+            // System Chart
+            systemChart = new Chart(document.getElementById('systemChart'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'CPU Load %',
+                            data: [],
+                            borderColor: 'rgb(245, 158, 11)',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            fill: false
+                        },
+                        {
+                            label: 'Temperature °C',
+                            data: [],
+                            borderColor: 'rgb(239, 68, 68)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            fill: false
+                        }
+                    ]
+                },
+                options: chartOptions
+            });
+
+            // Health Chart
+            healthChart = new Chart(document.getElementById('healthChart'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Success Rate %',
+                            data: [],
+                            borderColor: 'rgb(16, 185, 129)',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: false
+                        },
+                        {
+                            label: 'Error Rate %',
+                            data: [],
+                            borderColor: 'rgb(239, 68, 68)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            fill: false
+                        }
+                    ]
+                },
+                options: chartOptions
+            });
+        }
+
+        // Update metrics data for charts
+        function updateMetricsData(data) {
+            const now = new Date().toLocaleTimeString();
+            
+            // Add new data point
+            metricsData.timestamps.push(now);
+            
+            if (data.m3_max) {
+                metricsData.memoryUsage.push((data.m3_max.unified_memory_used / data.m3_max.unified_memory_total) * 100);
+                metricsData.cpuLoad.push(data.m3_max.cpu_load * 100);
+            }
+            
+            if (data.throughput) {
+                metricsData.throughput.push(data.throughput.documents_per_minute);
+                metricsData.errorRate.push(data.throughput.error_rate);
+                metricsData.successRate.push(data.throughput.success_rate);
+            }
+            
+            // Keep only last 50 data points
+            const maxPoints = 50;
+            if (metricsData.timestamps.length > maxPoints) {
+                metricsData.timestamps.shift();
+                metricsData.memoryUsage.shift();
+                metricsData.cpuLoad.shift();
+                metricsData.throughput.shift();
+                metricsData.errorRate.shift();
+                metricsData.successRate.shift();
+            }
+        }
+
+        // Update charts with latest data
+        function updateCharts() {
+            if (!memoryChart) return;
+            
+            // Update memory chart
+            memoryChart.data.labels = metricsData.timestamps;
+            memoryChart.data.datasets[0].data = metricsData.memoryUsage;
+            memoryChart.update('none');
+            
+            // Update throughput chart
+            throughputChart.data.labels = metricsData.timestamps;
+            throughputChart.data.datasets[0].data = metricsData.throughput;
+            throughputChart.update('none');
+            
+            // Update system chart
+            systemChart.data.labels = metricsData.timestamps;
+            systemChart.data.datasets[0].data = metricsData.cpuLoad;
+            systemChart.update('none');
+            
+            // Update health chart
+            healthChart.data.labels = metricsData.timestamps;
+            healthChart.data.datasets[0].data = metricsData.successRate;
+            healthChart.data.datasets[1].data = metricsData.errorRate;
+            healthChart.update('none');
+        }
+
+        // Fetch and display regression analysis
+        async function loadRegressionAnalysis() {
+            try {
+                const response = await fetch('/api/regression');
+                const regressions = await response.json();
+                displayRegressions(regressions);
+            } catch (error) {
+                console.error('Failed to load regression analysis:', error);
+            }
+        }
+
+        // Display regression analysis
+        function displayRegressions(regressions) {
+            const container = document.getElementById('regression-container');
+            
+            if (Object.keys(regressions).length === 0) {
+                container.innerHTML = '<div class="text-gray-400 text-center py-4">No regressions detected</div>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            for (const [metric, analysis] of Object.entries(regressions)) {
+                if (analysis.is_regression) {
+                    const regressionDiv = document.createElement('div');
+                    regressionDiv.className = 'bg-red-900 bg-opacity-50 border border-red-700 rounded-lg p-4';
+                    regressionDiv.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div class="font-semibold text-red-400">${metric.toUpperCase()} Regression Detected</div>
+                                <div class="text-sm mt-1">
+                                    Baseline: ${analysis.baseline_value.toFixed(2)} → 
+                                    Current: ${analysis.current_value.toFixed(2)} 
+                                    (${analysis.percentage_change.toFixed(1)}%)
+                                </div>
+                                <div class="text-xs mt-2 text-gray-400">
+                                    Confidence: ${(analysis.confidence_score * 100).toFixed(1)}%
+                                </div>
+                            </div>
+                            <div class="text-xs text-red-400">${analysis.trend_direction}</div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="text-xs font-medium text-gray-300 mb-1">Recommended Actions:</div>
+                            <ul class="text-xs text-gray-400 space-y-1">
+                                ${analysis.recommended_actions.map(action => `<li>• ${action}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                    container.appendChild(regressionDiv);
+                }
+            }
+        }
+
+        // Load regression analysis periodically
+        setInterval(loadRegressionAnalysis, 60000); // Every minute
+        loadRegressionAnalysis(); // Initial load
+    </script>
+</body>
+</html>

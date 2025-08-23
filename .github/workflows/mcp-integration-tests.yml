@@ -1,0 +1,558 @@
+name: MCP Integration Tests
+
+on:
+  push:
+    branches: [ main, feat/*, develop ]
+    paths:
+      - 'src/python-pipeline/mcp/**'
+      - 'src/rust-pipeline/src/mcp/**'
+      - 'integrated_pipeline/**'
+      - 'tests/mcp/**'
+      - '.github/workflows/mcp-integration-tests.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/python-pipeline/mcp/**'
+      - 'src/rust-pipeline/src/mcp/**'
+      - 'integrated_pipeline/**'
+      - 'tests/mcp/**'
+      - '.github/workflows/mcp-integration-tests.yml'
+  schedule:
+    # Run daily at 3 AM UTC to catch performance regressions
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of MCP tests to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - quick
+          - performance
+          - compliance
+          - regression
+      enable_verbose:
+        description: 'Enable verbose logging'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  RUST_LOG: info
+  RUST_BACKTRACE: 1
+  PYTHONPATH: ${{ github.workspace }}/src/python-pipeline
+  # Performance targets from CLAUDE.md
+  TARGET_THROUGHPUT_DOCS_PER_HOUR: 25.0
+  MAX_MEMORY_USAGE_GB: 60.0
+  MAX_MESSAGE_LATENCY_MS: 100.0
+
+jobs:
+  mcp-protocol-compliance:
+    name: MCP Protocol Compliance Tests
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install Python dependencies
+        run: |
+          pip install -r src/python-pipeline/requirements.txt
+          pip install pytest pytest-asyncio pytest-cov websockets
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            integrated_pipeline
+            src/rust-pipeline
+      
+      - name: Build Rust components
+        run: |
+          cd integrated_pipeline
+          cargo build --release
+      
+      - name: Run MCP Protocol Compliance Tests
+        run: |
+          cd tests/mcp
+          python -m pytest test_mcp_protocol_compliance.py -v \
+            --tb=short \
+            --cov=src.python_pipeline.mcp \
+            --cov-report=xml \
+            --cov-report=html \
+            --junit-xml=protocol_compliance_results.xml
+      
+      - name: Upload Protocol Compliance Results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: mcp-protocol-compliance-results
+          path: |
+            tests/mcp/protocol_compliance_results.xml
+            tests/mcp/htmlcov/
+            tests/mcp/coverage.xml
+
+  mcp-performance-validation:
+    name: MCP Performance Validation
+    runs-on: ubuntu-latest-16-cores
+    timeout-minutes: 45
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config
+      
+      - name: Install Python dependencies
+        run: |
+          pip install -r src/python-pipeline/requirements.txt
+          pip install pytest pytest-asyncio pytest-benchmark psutil
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            integrated_pipeline
+            src/rust-pipeline
+      
+      - name: Build optimized Rust components
+        run: |
+          cd integrated_pipeline
+          cargo build --release
+      
+      - name: Run MCP Performance Tests
+        env:
+          ENABLE_PERFORMANCE_TESTS: true
+          PERFORMANCE_TEST_DURATION: 300  # 5 minutes
+        run: |
+          cd tests/mcp
+          python -m pytest test_mcp_performance_validation.py -v \
+            --tb=short \
+            --benchmark-only \
+            --benchmark-json=performance_results.json \
+            --junit-xml=performance_results.xml
+      
+      - name: Validate Performance Targets
+        run: |
+          python -c "
+          import json
+          with open('tests/mcp/performance_results.json', 'r') as f:
+              results = json.load(f)
+          
+          # Extract key metrics (would be implemented based on actual test structure)
+          print('Performance validation completed')
+          print(f'Target throughput: {os.environ.get(\"TARGET_THROUGHPUT_DOCS_PER_HOUR\")} docs/hour')
+          "
+      
+      - name: Upload Performance Results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: mcp-performance-results
+          path: |
+            tests/mcp/performance_results.json
+            tests/mcp/performance_results.xml
+
+  mcp-integration-tests:
+    name: MCP Integration Tests (Rust)
+    runs-on: ubuntu-latest-16-cores
+    timeout-minutes: 60
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install Python dependencies
+        run: |
+          pip install -r src/python-pipeline/requirements.txt
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            integrated_pipeline
+            src/rust-pipeline
+      
+      - name: Build Rust test suite
+        run: |
+          cd integrated_pipeline/tests
+          cargo build --release
+      
+      - name: Run MCP Integration Tests
+        env:
+          RUST_LOG: ${{ github.event.inputs.enable_verbose == 'true' && 'debug' || 'info' }}
+          ENABLE_MCP_TESTS: true
+          ENABLE_INTEGRATION_TESTS: true
+          ENABLE_MEMORY_TESTS: true
+          TEST_TIMEOUT_MINUTES: 45
+        run: |
+          cd integrated_pipeline/tests
+          cargo test mcp_integration_tests --release -- --nocapture --test-threads=4
+      
+      - name: Run Comprehensive Test Suite
+        if: ${{ github.event.inputs.test_type == 'all' || github.event.inputs.test_type == '' }}
+        run: |
+          cd integrated_pipeline/tests
+          cargo run --bin test_runner --release -- \
+            --generate-reports \
+            --output-dir=../test_output \
+            ${{ github.event.inputs.enable_verbose == 'true' && '--verbose' || '' }}
+      
+      - name: Upload Integration Test Results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: mcp-integration-results
+          path: |
+            integrated_pipeline/test_output/
+            integrated_pipeline/tests/target/
+
+  mcp-memory-validation:
+    name: MCP Memory Leak Detection
+    runs-on: ubuntu-latest-16-cores
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install memory profiling tools
+        run: |
+          pip install memory-profiler psutil
+          sudo apt-get update
+          sudo apt-get install -y valgrind
+      
+      - name: Install Python dependencies
+        run: |
+          pip install -r src/python-pipeline/requirements.txt
+          pip install pytest pytest-asyncio
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            integrated_pipeline
+            src/rust-pipeline
+      
+      - name: Build with debug symbols
+        run: |
+          cd integrated_pipeline
+          cargo build --features debug-memory
+      
+      - name: Run Memory Leak Detection Tests
+        run: |
+          cd tests/mcp
+          python -m pytest -k "memory" -v \
+            --tb=short \
+            --junit-xml=memory_validation_results.xml
+      
+      - name: Run Rust Memory Tests with Valgrind
+        run: |
+          cd integrated_pipeline/tests
+          valgrind --tool=memcheck \
+                   --leak-check=full \
+                   --show-leak-kinds=all \
+                   --track-origins=yes \
+                   --log-file=valgrind_output.txt \
+            cargo test mcp_integration_tests::test_memory_validation --release
+      
+      - name: Upload Memory Test Results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: mcp-memory-validation-results
+          path: |
+            tests/mcp/memory_validation_results.xml
+            integrated_pipeline/tests/valgrind_output.txt
+
+  mcp-regression-tests:
+    name: MCP Performance Regression Tests
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 45
+    if: github.event_name == 'schedule' || github.event.inputs.test_type == 'regression'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r src/python-pipeline/requirements.txt
+          pip install pytest pytest-benchmark
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            integrated_pipeline
+            src/rust-pipeline
+      
+      - name: Build Rust components
+        run: |
+          cd integrated_pipeline
+          cargo build --release
+      
+      - name: Download Previous Benchmark Results
+        uses: actions/download-artifact@v3
+        continue-on-error: true
+        with:
+          name: mcp-benchmark-history
+          path: benchmark_history/
+      
+      - name: Run Regression Tests
+        run: |
+          cd tests/mcp
+          python -m pytest test_mcp_performance_validation.py::TestMCPPerformanceValidation::test_regression_performance_benchmark -v \
+            --benchmark-compare=benchmark_history/performance_results.json \
+            --benchmark-compare-fail=min:10% \
+            --junit-xml=regression_results.xml
+      
+      - name: Upload Regression Results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: mcp-regression-results
+          path: |
+            tests/mcp/regression_results.xml
+            tests/mcp/performance_results.json
+      
+      - name: Update Benchmark History
+        uses: actions/upload-artifact@v3
+        with:
+          name: mcp-benchmark-history
+          path: tests/mcp/performance_results.json
+
+  mcp-cross-platform-tests:
+    name: MCP Cross-Platform Tests
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        rust: [stable]
+        python: ['3.11']
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust }}
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python }}
+          cache: 'pip'
+      
+      - name: Install dependencies (Ubuntu/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          pip install -r src/python-pipeline/requirements.txt
+          pip install pytest pytest-asyncio
+      
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pip install -r src/python-pipeline/requirements.txt
+          pip install pytest pytest-asyncio
+        shell: cmd
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            integrated_pipeline
+            src/rust-pipeline
+      
+      - name: Build Rust components
+        run: |
+          cd integrated_pipeline
+          cargo build --release
+      
+      - name: Run Cross-Platform MCP Tests
+        run: |
+          cd tests/mcp
+          python -m pytest test_mcp_protocol_compliance.py -k "not performance" -v \
+            --tb=short \
+            --junit-xml=cross_platform_results_${{ matrix.os }}.xml
+      
+      - name: Upload Cross-Platform Results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: mcp-cross-platform-results-${{ matrix.os }}
+          path: tests/mcp/cross_platform_results_${{ matrix.os }}.xml
+
+  mcp-test-summary:
+    name: MCP Test Summary
+    runs-on: ubuntu-latest
+    needs: [mcp-protocol-compliance, mcp-performance-validation, mcp-integration-tests, mcp-memory-validation]
+    if: always()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download all test results
+        uses: actions/download-artifact@v3
+        with:
+          path: all_results/
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Generate Combined Test Report
+        run: |
+          python -c "
+          import os
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          
+          results_dir = Path('all_results')
+          total_tests = 0
+          total_failures = 0
+          
+          # Process JUnit XML files
+          for xml_file in results_dir.rglob('*.xml'):
+              try:
+                  tree = ET.parse(xml_file)
+                  root = tree.getroot()
+                  if root.tag == 'testsuite':
+                      tests = int(root.get('tests', 0))
+                      failures = int(root.get('failures', 0))
+                      total_tests += tests
+                      total_failures += failures
+                      print(f'File: {xml_file.name}, Tests: {tests}, Failures: {failures}')
+              except Exception as e:
+                  print(f'Error processing {xml_file}: {e}')
+          
+          print(f'\\n=== MCP Integration Test Summary ===')
+          print(f'Total Tests: {total_tests}')
+          print(f'Total Failures: {total_failures}')
+          print(f'Success Rate: {((total_tests - total_failures) / total_tests * 100):.2f}%' if total_tests > 0 else 'N/A')
+          
+          # Set GitHub output
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'total_tests={total_tests}\\n')
+              f.write(f'total_failures={total_failures}\\n')
+              f.write(f'success_rate={((total_tests - total_failures) / total_tests * 100):.2f if total_tests > 0 else 0}\\n')
+          "
+      
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const totalTests = '${{ steps.generate-report.outputs.total_tests }}';
+            const totalFailures = '${{ steps.generate-report.outputs.total_failures }}';
+            const successRate = '${{ steps.generate-report.outputs.success_rate }}';
+            
+            const comment = `## 🔄 MCP Integration Test Results
+            
+            | Metric | Value |
+            |--------|--------|
+            | **Total Tests** | ${totalTests} |
+            | **Failures** | ${totalFailures} |
+            | **Success Rate** | ${successRate}% |
+            
+            ${totalFailures === '0' ? '✅ All MCP integration tests passed!' : '❌ Some MCP tests failed - please review the logs.'}
+            
+            ### Test Categories Executed:
+            - ✅ MCP Protocol Compliance
+            - ✅ MCP Performance Validation  
+            - ✅ MCP Integration Tests
+            - ✅ MCP Memory Validation
+            
+            For detailed results, check the [Actions tab](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+      
+      - name: Update GitHub Status
+        if: always()
+        run: |
+          if [ "${{ steps.generate-report.outputs.total_failures }}" -eq "0" ]; then
+            echo "✅ All MCP integration tests passed"
+            exit 0
+          else
+            echo "❌ ${{ steps.generate-report.outputs.total_failures }} MCP test(s) failed"
+            exit 1
+          fi

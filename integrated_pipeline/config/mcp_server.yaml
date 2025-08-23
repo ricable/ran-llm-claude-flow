@@ -1,0 +1,164 @@
+# MCP Server Configuration
+# Configuration for Model Context Protocol server integration
+# with hybrid Rust-Python pipeline
+
+server:
+  name: "Rust-Python Hybrid Pipeline MCP Server"
+  version: "1.0.0"
+  websocket_addr: "127.0.0.1:8000"
+  http_addr: "127.0.0.1:8001"
+  max_connections: 200
+  enable_resources: true
+  enable_tools: true
+  enable_prompts: true
+  use_shared_memory: true
+  large_payload_threshold: 52428800  # 50MB
+
+# Integration with existing IPC system
+ipc:
+  shared_memory_size_gb: 15
+  max_connections: 128
+  timeout_seconds: 30
+  enable_checksum_validation: true
+  connection_pool_size: 32
+  queue_size: 1024
+  batch_size: 64
+  compression_enabled: true
+  enable_performance_monitoring: true
+
+# Performance optimization settings
+performance:
+  enable_m3_max_optimization: true
+  memory_pool_size_gb: 60
+  ring_buffer_size_mb: 256
+  auto_gc_enabled: true
+  gc_interval_seconds: 180
+  health_monitoring_enabled: true
+  preserve_existing_performance: true
+  target_throughput_docs_per_hour: 25.0
+
+# Protocol configuration
+protocol:
+  version: "2024-11-05"
+  enable_experimental_features: true
+  enable_backwards_compatibility: true
+  message_compression: true
+  max_message_size_mb: 100
+
+# Resource definitions
+resources:
+  document_processor:
+    uri: "mcp://rust-core/document-processor"
+    name: "Document Processor"
+    description: "High-performance document processing with M3 Max optimization"
+    mime_type: "application/json"
+    priority: 1.0
+    
+  performance_metrics:
+    uri: "mcp://rust-core/performance-metrics"
+    name: "Performance Metrics"
+    description: "Real-time performance and system metrics"
+    mime_type: "application/json"
+    priority: 0.5
+
+  shared_memory_status:
+    uri: "mcp://rust-core/shared-memory-status"
+    name: "Shared Memory Status"
+    description: "Shared memory pool utilization and health"
+    mime_type: "application/json" 
+    priority: 0.3
+
+# Tool definitions
+tools:
+  process_document:
+    name: "process-document"
+    description: "Process a document using the hybrid Rust-Python pipeline"
+    timeout_seconds: 60
+    enable_shared_memory: true
+    quality_threshold_default: 0.75
+    
+  benchmark_performance:
+    name: "benchmark-performance"
+    description: "Run performance benchmarks on the pipeline"
+    timeout_seconds: 300
+    max_iterations: 1000
+    available_test_types:
+      - "latency"
+      - "throughput" 
+      - "memory"
+      - "quality"
+      
+  analyze_quality:
+    name: "analyze-quality"
+    description: "Analyze document processing quality metrics"
+    timeout_seconds: 30
+
+# Prompt templates
+prompts:
+  analyze_document:
+    name: "analyze-document"
+    description: "Analyze document content and generate insights"
+    focus_areas:
+      - "technical"
+      - "business"
+      - "general"
+      
+  generate_qa:
+    name: "generate-qa"
+    description: "Generate question-answer pairs from document content"
+    min_qa_pairs: 3
+    max_qa_pairs: 10
+
+# Logging configuration
+logging:
+  level: "INFO"
+  file_path: "./logs/mcp_server.log"
+  enable_performance_logging: true
+  enable_request_logging: true
+  enable_error_tracking: true
+  log_rotation:
+    enabled: true
+    max_size_mb: 100
+    max_files: 10
+
+# Security settings
+security:
+  enable_cors: true
+  allowed_origins:
+    - "http://localhost:*"
+    - "http://127.0.0.1:*"
+  max_request_size_mb: 100
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 1000
+    burst_size: 100
+
+# Monitoring and health checks  
+monitoring:
+  health_check_interval_seconds: 30
+  metrics_collection_interval_seconds: 10
+  performance_alert_thresholds:
+    max_response_time_ms: 5000
+    max_memory_usage_percent: 90
+    min_success_rate_percent: 95
+  
+  alerting:
+    enabled: true
+    email_notifications: false
+    webhook_url: null
+
+# Development and testing
+development:
+  enable_debug_logging: false
+  enable_test_endpoints: false
+  mock_ml_responses: false
+  bypass_quality_checks: false
+  
+# Feature flags
+features:
+  enable_websocket_transport: true
+  enable_http_transport: true
+  enable_stdio_transport: false
+  enable_experimental_compression: true
+  enable_protocol_extensions: true
+  enable_advanced_routing: false

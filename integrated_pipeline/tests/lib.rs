@@ -64,6 +64,17 @@ pub mod quality;
 pub mod fixtures;
 pub mod runners;
 
+// MCP Integration Testing Modules
+pub mod mcp_integration_tests;
+pub mod test_runner;
+
+// Re-export key MCP testing components
+pub use mcp_integration_tests::{
+    MCPIntegrationTests, MCPTestConfig, MCPTestResults, 
+    PerformanceTargets, MemoryLimits
+};
+pub use test_runner::{MCPTestRunner, TestRunnerConfig, run_mcp_tests_cli};
+
 // Re-exports for convenience
 pub use e2e::{E2EPipelineTestSuite, PipelineTestReport};
 pub use integration::{IntegrationTestSuite, IPCTestReport};
