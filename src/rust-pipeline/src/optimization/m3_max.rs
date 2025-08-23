@@ -12,17 +12,19 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use sysinfo::{System, SystemExt, ProcessorExt};
+use sysinfo::System;
 use uuid::Uuid;
 
 /// M3 Max memory pool configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct M3MaxMemoryPool {
     pub pool_id: Uuid,
     pub name: String,
     pub base_address: u64,
     pub size_bytes: usize,
+    #[serde(skip)]
     pub allocated_bytes: AtomicUsize,
+    #[serde(skip)]
     pub allocation_count: AtomicU64,
     pub pool_type: PoolType,
     pub optimization_flags: OptimizationFlags,
@@ -194,7 +196,7 @@ impl M3MaxMemoryManager {
             last_update: AtomicU64::new(current_timestamp_ms()),
         };
 
-        let mut manager = Self {
+        let manager = Self {
             config,
             system_info,
             memory_pools: Arc::new(RwLock::new(HashMap::new())),
@@ -394,7 +396,7 @@ impl M3MaxMemoryManager {
         tracing::info!("Starting M3 Max memory layout optimization");
         
         let pools = self.memory_pools.read();
-        for (pool_id, pool) in pools.iter() {
+        for (_pool_id, pool) in pools.iter() {
             self.optimize_pool_layout(pool).await?;
         }
         
@@ -421,8 +423,8 @@ impl M3MaxMemoryManager {
         let total_memory = sys.total_memory();
         let total_memory_gb = (total_memory / 1024 / 1024 / 1024) as u32;
 
-        let processors = sys.processors();
-        let processor_count = processors.len() as u8;
+        let cpus = sys.cpus();
+        let processor_count = cpus.len() as u8;
 
         // M3 Max specifications (hardcoded since system detection is limited)
         let (performance_cores, efficiency_cores) = if cfg!(target_arch = "aarch64") && cfg!(target_os = "macos") {
@@ -452,10 +454,6 @@ impl M3MaxMemoryManager {
 
     /// Initialize default memory pools for M3 Max
     async fn initialize_memory_pools(&self) -> Result<()> {
-        let total_memory = self.config.memory_pools.processing + 
-                          self.config.memory_pools.ipc + 
-                          self.config.memory_pools.cache;
-
         // Create system processing pool (largest allocation)
         self.create_pool(
             "System Processing",
@@ -497,110 +495,79 @@ impl M3MaxMemoryManager {
             "High Bandwidth",
             (self.config.memory_pools.ipc as usize) * 1024 * 1024 * 1024,
             PoolType::HighBandwidth,
-            OptimizationFlags {
-                metal_optimization: false,
-                neural_engine_acceleration: false,
-                amx_acceleration: true,
-                enable_prefetch: true,
-                alignment_bytes: 128, // Cache line alignment
-            },
+            OptimizationFlags::default(),
         ).await?;
-
-        // Create cache pool
-        self.create_pool(
-            "Cache Optimized",
-            (self.config.memory_pools.cache as usize) * 1024 * 1024 * 1024,
-            PoolType::Cache,
-            OptimizationFlags {
-                metal_optimization: false,
-                neural_engine_acceleration: false,
-                amx_acceleration: false,
-                enable_prefetch: true,
-                alignment_bytes: 64,
-            },
-        ).await?;
-
+        
         Ok(())
     }
 
-    /// Allocate pool memory with M3 Max optimization
-    async fn allocate_pool_memory(&self, size: usize, pool_type: &PoolType) -> Result<u64> {
-        // In a real implementation, this would use platform-specific APIs
-        // For now, we simulate address allocation
+    /// Allocate base memory for a pool (platform-specific)
+    async fn allocate_pool_memory(&self, _size: usize, pool_type: &PoolType) -> Result<u64> {
+        // This is a placeholder. In a real implementation, we would use
+        // platform-specific APIs (like `mmap` or `mach_vm_allocate`) to
+        // allocate memory with appropriate flags for GPU/ANE access.
         let base_address = match pool_type {
-            PoolType::System => 0x100000000u64,
-            PoolType::Gpu => 0x200000000u64,
-            PoolType::NeuralEngine => 0x300000000u64,
-            PoolType::HighBandwidth => 0x400000000u64,
-            PoolType::Cache => 0x500000000u64,
+            PoolType::Gpu => 0x2_0000_0000,
+            PoolType::NeuralEngine => 0x3_0000_0000,
+            _ => 0x1_0000_0000,
         };
-
-        tracing::debug!("Allocated pool memory: {} bytes at 0x{:x}", size, base_address);
         Ok(base_address)
     }
 
-    /// Configure pool for M3 Max hardware
+    /// Configure memory pool for M3 Max hardware
     async fn configure_pool_for_m3_max(&self, pool: &M3MaxMemoryPool) -> Result<()> {
-        tracing::debug!("Configuring pool '{}' for M3 Max hardware", pool.name);
-
-        // Configure based on pool type
+        tracing::debug!("Configuring pool '{}' for M3 Max", pool.name);
+        
         match pool.pool_type {
-            PoolType::Gpu => {
-                if pool.optimization_flags.metal_optimization {
-                    // Configure Metal Performance Shaders
-                    self.configure_metal_optimization(pool).await?;
-                }
-            }
-            PoolType::NeuralEngine => {
-                if pool.optimization_flags.neural_engine_acceleration {
-                    // Configure Neural Engine acceleration
-                    self.configure_neural_engine(pool).await?;
-                }
-            }
+            PoolType::Gpu => self.configure_metal_optimization(pool).await?,
+            PoolType::NeuralEngine => self.configure_neural_engine(pool).await?,
             PoolType::System | PoolType::HighBandwidth | PoolType::Cache => {
-                // Configure CPU optimization
-                self.configure_cpu_optimization(pool).await?;
+                self.configure_cpu_optimization(pool).await?
             }
         }
-
+        
         Ok(())
     }
 
-    /// Configure Metal Performance Shaders optimization
+    /// Configure Metal optimizations for a GPU pool
     async fn configure_metal_optimization(&self, _pool: &M3MaxMemoryPool) -> Result<()> {
-        // In a real implementation, this would configure Metal shaders
-        tracing::debug!("Configured Metal optimization");
+        // In a real implementation, this would interact with Metal APIs
+        // to register the memory region for GPU access.
+        tracing::debug!("Metal optimization configured for GPU pool");
         Ok(())
     }
 
-    /// Configure Neural Engine acceleration
+    /// Configure Neural Engine optimizations for an ANE pool
     async fn configure_neural_engine(&self, _pool: &M3MaxMemoryPool) -> Result<()> {
-        // In a real implementation, this would configure Neural Engine
-        tracing::debug!("Configured Neural Engine acceleration");
+        // In a real implementation, this would interact with Core ML APIs
+        // to prepare the memory for ANE processing.
+        tracing::debug!("Neural Engine optimization configured for ANE pool");
         Ok(())
     }
-
-    /// Configure CPU optimization for M3 Max
+    
+    /// Configure CPU-specific optimizations (AMX, prefetch)
     async fn configure_cpu_optimization(&self, pool: &M3MaxMemoryPool) -> Result<()> {
+        if pool.optimization_flags.enable_prefetch {
+            // Modern CPUs handle this well, but we could issue prefetch
+            // hints for specific access patterns.
+            tracing::debug!("CPU prefetching enabled for pool '{}'", pool.name);
+        }
         if pool.optimization_flags.amx_acceleration {
-            // Configure AMX (Apple Matrix Extension) coprocessor
-            tracing::debug!("Configured AMX acceleration for pool '{}'", pool.name);
+            // AMX is accessed via specific instructions, no specific setup needed here
+            tracing::debug!("AMX acceleration noted for pool '{}'", pool.name);
         }
         Ok(())
     }
 
-    /// Align size to M3 Max optimal boundaries
-    fn align_to_m3_max_boundary(&self, size: usize, flags: &OptimizationFlags) -> usize {
-        let alignment = flags.alignment_bytes;
-        (size + alignment - 1) & !(alignment - 1)
-    }
-
-    /// Align size to specified boundary
     fn align_size(&self, size: usize, alignment: usize) -> usize {
         (size + alignment - 1) & !(alignment - 1)
     }
 
-    /// Allocate optimized memory with M3 Max features
+    fn align_to_m3_max_boundary(&self, size: usize, flags: &OptimizationFlags) -> usize {
+        self.align_size(size, flags.alignment_bytes)
+    }
+
+    /// Allocate memory with optimized flags
     async fn allocate_optimized_memory(
         &self,
         base_address: u64,
@@ -608,19 +575,16 @@ impl M3MaxMemoryManager {
         size: usize,
         flags: &OptimizationFlags,
     ) -> Result<u64> {
-        let address = base_address + offset as u64;
-
-        // Apply M3 Max specific optimizations
+        let addr = base_address + offset as u64;
         if flags.enable_prefetch {
-            self.setup_memory_prefetch(address, size).await?;
+            self.setup_memory_prefetch(addr, size).await?;
         }
-
-        Ok(address)
+        Ok(addr)
     }
 
-    /// Setup memory prefetch for M3 Max
+    /// Setup memory prefetching for a memory region
     async fn setup_memory_prefetch(&self, _address: u64, _size: usize) -> Result<()> {
-        // In a real implementation, this would configure hardware prefetching
+        // This is a placeholder for platform-specific prefetch setup
         Ok(())
     }
 
@@ -631,92 +595,84 @@ impl M3MaxMemoryManager {
         _size: usize,
         _flags: &OptimizationFlags,
     ) -> Result<()> {
-        // In a real implementation, this would perform hardware-specific cleanup
+        // Placeholder for cleanup logic (e.g., unmapping memory)
         Ok(())
     }
 
-    /// Start performance monitoring for M3 Max
+    /// Start background task for performance monitoring
     async fn start_performance_monitoring(&self) {
-        let performance_monitor = self.performance_monitor.clone();
+        let monitor = self.performance_monitor.clone();
         let system = self.system.clone();
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(5));
-
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
             loop {
                 interval.tick().await;
+                
+                let mut sys = system.lock();
+                sys.refresh_cpu();
+                sys.refresh_memory();
 
-                // Update system metrics
-                {
-                    let mut sys = system.lock();
-                    sys.refresh_all();
+                let cpu_usage = sys.cpus().iter()
+                    .map(|c| c.cpu_usage() as u64)
+                    .sum::<u64>() / sys.cpus().len() as u64;
 
-                    let cpu_usage = sys.processors().iter()
-                        .map(|p| p.cpu_usage() as f64)
-                        .sum::<f64>() / sys.processors().len() as f64;
-
-                    let memory_usage = sys.used_memory() as f64 / sys.total_memory() as f64 * 100.0;
-
-                    performance_monitor.cpu_usage.store((cpu_usage * 100.0) as u64, Ordering::Relaxed);
-                    performance_monitor.memory_pressure.store((memory_usage * 100.0) as u64, Ordering::Relaxed);
-                    performance_monitor.last_update.store(current_timestamp_ms(), Ordering::Relaxed);
-                }
+                monitor.cpu_usage.store(cpu_usage * 100, Ordering::Relaxed);
+                
+                let memory_pressure = (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0;
+                monitor.memory_pressure.store(memory_pressure as u64 * 100, Ordering::Relaxed);
+                
+                monitor.last_update.store(current_timestamp_ms(), Ordering::Relaxed);
             }
         });
     }
 
     /// Get current system metrics
     async fn get_system_metrics(&self) -> Result<SystemMetrics> {
-        let cpu_usage = self.performance_monitor.cpu_usage.load(Ordering::Relaxed) as f64 / 100.0;
-        let memory_pressure = self.performance_monitor.memory_pressure.load(Ordering::Relaxed) as f64 / 100.0;
-        let gpu_utilization = self.performance_monitor.gpu_utilization.load(Ordering::Relaxed) as f64 / 100.0;
-        let neural_engine_utilization = self.performance_monitor.neural_engine_utilization.load(Ordering::Relaxed) as f64 / 100.0;
-
-        // Estimate memory bandwidth utilization based on activity
-        let memory_bandwidth_utilization = (cpu_usage + gpu_utilization) * self.system_info.memory_bandwidth_gbps / 2.0;
-
-        // Determine thermal state based on utilization
+        let monitor = &self.performance_monitor;
+        let cpu_usage = monitor.cpu_usage.load(Ordering::Relaxed) as f64 / 100.0;
+        let memory_pressure = monitor.memory_pressure.load(Ordering::Relaxed) as f64 / 100.0;
+        let gpu_utilization = monitor.gpu_utilization.load(Ordering::Relaxed) as f64 / 100.0;
+        
         let thermal_state = match (cpu_usage + gpu_utilization) / 2.0 {
-            x if x < 0.5 => ThermalState::Normal,
-            x if x < 0.7 => ThermalState::Fair,
-            x if x < 0.85 => ThermalState::Serious,
-            _ => ThermalState::Critical,
+            x if x > 90.0 => ThermalState::Critical,
+            x if x > 80.0 => ThermalState::Serious,
+            x if x > 60.0 => ThermalState::Fair,
+            _ => ThermalState::Normal,
         };
+        
+        let memory_bandwidth_utilization = (cpu_usage + gpu_utilization) * self.system_info.memory_bandwidth_gbps as f64 / 2.0;
 
         Ok(SystemMetrics {
             cpu_usage_percent: cpu_usage,
             memory_pressure,
             gpu_utilization_percent: gpu_utilization,
-            neural_engine_utilization_percent: neural_engine_utilization,
+            neural_engine_utilization_percent: 0.0, // Placeholder
             memory_bandwidth_utilization_gbps: memory_bandwidth_utilization,
             thermal_state,
         })
     }
-
-    /// Optimize pool layout for better performance
+    
+    /// Optimize memory layout for a specific pool
     async fn optimize_pool_layout(&self, _pool: &M3MaxMemoryPool) -> Result<()> {
-        // In a real implementation, this would reorganize memory layout
+        // Placeholder for pool-specific optimization logic
         Ok(())
     }
 
-    /// Trigger system-wide M3 Max optimization
+    /// Trigger system-wide memory optimization
     async fn trigger_m3_max_optimization(&self) -> Result<()> {
-        // In a real implementation, this would trigger hardware-level optimizations
-        tracing::debug!("Triggered M3 Max system optimization");
+        // Placeholder for system-level calls (e.g., `purge`)
         Ok(())
     }
 }
 
-/// Initialize M3 Max optimizations
+
+/// Initialize the M3 Max memory manager globally
 pub async fn initialize(config: &M3MaxConfig) -> Result<()> {
-    tracing::info!("Initializing M3 Max optimizations");
-    
-    let _memory_manager = M3MaxMemoryManager::new(config.clone()).await?;
-    
-    // In a real implementation, we would store the manager in a global state
-    // For now, just log successful initialization
-    
-    tracing::info!("M3 Max optimizations initialized successfully");
+    let _manager = M3MaxMemoryManager::new(config.clone()).await?;
+    // Store manager in a global static or return it for use in the pipeline
+    // For now, it's created and dropped, which is not useful.
+    // This part of the design needs to be completed.
     Ok(())
 }
 
@@ -734,33 +690,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_m3_max_system_detection() {
-        let system_info = M3MaxMemoryManager::detect_m3_max_system().await.unwrap();
-        assert!(system_info.total_memory_gb > 0);
-        assert!(system_info.performance_cores > 0);
+        let sys_info = M3MaxMemoryManager::detect_m3_max_system().await.unwrap();
+        assert!(sys_info.total_memory_gb > 0);
+        assert!(sys_info.performance_cores > 0);
+        assert!(sys_info.efficiency_cores > 0);
     }
 
     #[tokio::test]
     async fn test_memory_alignment() {
         let config = M3MaxConfig::default();
         let manager = M3MaxMemoryManager::new(config).await.unwrap();
-        
-        let flags = OptimizationFlags::default();
-        let aligned = manager.align_to_m3_max_boundary(100, &flags);
-        assert_eq!(aligned, 128); // Should align to 64-byte boundary
+        assert_eq!(manager.align_size(100, 64), 128);
+        assert_eq!(manager.align_size(64, 64), 64);
+        assert_eq!(manager.align_size(65, 64), 128);
     }
 
     #[tokio::test]
     async fn test_memory_pool_creation() {
         let config = M3MaxConfig::default();
         let manager = M3MaxMemoryManager::new(config).await.unwrap();
+        let pool_id = manager.create_pool("test-pool", 1024, PoolType::System, OptimizationFlags::default()).await.unwrap();
         
-        let pool_id = manager.create_pool(
-            "Test Pool",
-            1024 * 1024,
-            PoolType::System,
-            OptimizationFlags::default(),
-        ).await.unwrap();
-        
-        assert!(!pool_id.is_nil());
+        let stats = manager.get_stats().await.unwrap();
+        assert_eq!(stats.pools.len(), 5); // 4 default + 1 new
+        assert_eq!(stats.pools.iter().find(|p| p.pool_id == pool_id).is_some(), true);
     }
 }

@@ -16,6 +16,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use prometheus::core::{Atomic, AtomicF64};
 use systemstat::{Platform, System};
 use tokio::{sync::broadcast, time};
 

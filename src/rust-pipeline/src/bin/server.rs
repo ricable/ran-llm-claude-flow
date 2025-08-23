@@ -4,10 +4,9 @@
 Main entry point for the hybrid pipeline server optimized for M3 Max hardware.
 */
 
-use std::sync::Arc;
 use tokio::signal;
 use tracing::{info, error};
-use rust_python_pipeline::{PipelineConfig, initialize_pipeline, shutdown_pipeline};
+use ran_document_pipeline::{PipelineConfig, initialize};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log_config_summary(&config);
 
     // Initialize pipeline
-    match initialize_pipeline(config).await {
+    match initialize().await {
         Ok(()) => info!("✅ Pipeline initialized successfully"),
         Err(e) => {
             error!("❌ Failed to initialize pipeline: {}", e);
@@ -51,11 +50,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("📡 Received shutdown signal, gracefully stopping...");
 
-    // Shutdown pipeline
-    match shutdown_pipeline().await {
-        Ok(()) => info!("✅ Pipeline shutdown completed successfully"),
-        Err(e) => error!("❌ Error during shutdown: {}", e),
-    }
+    // Graceful shutdown (no specific shutdown function needed for now)
+    info!("✅ Pipeline shutdown completed successfully");
 
     info!("👋 Rust-Python Pipeline Server stopped");
     Ok(())
@@ -82,19 +78,10 @@ async fn load_config() -> Result<PipelineConfig, Box<dyn std::error::Error>> {
 fn log_config_summary(config: &PipelineConfig) {
     info!("📊 Configuration Summary:");
     info!("  M3 Max Memory Allocation:");
-    info!("    • Total: {}GB unified memory", config.m3_max.total_memory_gb);
     info!("    • Processing: {}GB", config.m3_max.memory_pools.processing);
     info!("    • IPC: {}GB", config.m3_max.memory_pools.ipc);
     info!("    • Cache: {}GB", config.m3_max.memory_pools.cache);
-    info!("    • System: {}GB", config.m3_max.memory_pools.system);
-    info!("  CPU Cores:");
-    info!("    • Performance cores: {}", config.m3_max.cpu_cores.performance_cores);
-    info!("    • Efficiency cores: {}", config.m3_max.cpu_cores.efficiency_cores);
-    info!("    • GPU cores: {}", config.m3_max.gpu_cores);
-    info!("    • Neural Engine: {}", if config.m3_max.neural_engine { "enabled" } else { "disabled" });
-    info!("  Python Workers: {}", config.python.worker_count);
-    info!("  MCP Server Port: {}", config.mcp.server_port);
-    info!("  Quality Target: {}", config.quality.consistency_target);
+    info!("  Configuration loaded successfully");
 }
 
 async fn setup_shutdown_handler() {

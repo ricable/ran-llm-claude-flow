@@ -68,6 +68,7 @@ pub enum IpcMessage {
     // System control messages
     WorkerHeartbeat {
         worker_id: String,
+        timestamp: u64,
         status: WorkerStatus,
         metrics: WorkerMetrics,
     },
@@ -75,9 +76,8 @@ pub enum IpcMessage {
     
     // Error handling
     Error {
-        error_type: String,
+        code: u32,
         message: String,
-        source_component: String,
     },
 }
 
@@ -208,17 +208,17 @@ pub struct QualityDetails {
     pub issues: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq)]
 pub enum WorkerStatus {
     Initializing,
     Ready,
     Processing,
     Idle,
     Error,
-    Shutting Down,
+    ShuttingDown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Copy, Default)]
 pub struct WorkerMetrics {
     pub cpu_usage_percent: f64,
     pub memory_usage_mb: u64,
@@ -250,7 +250,7 @@ impl IpcManager {
     pub async fn new(config: &PipelineConfig) -> Result<Self> {
         let shared_memory = Arc::new(
             shared_memory::SharedMemoryManager::new(
-                config.m3_max.memory_pools.ipc * 1024 * 1024 * 1024  // Convert GB to bytes
+                (config.m3_max.memory_pools.ipc * 1024 * 1024 * 1024) as usize  // Convert GB to bytes
             ).await?
         );
         

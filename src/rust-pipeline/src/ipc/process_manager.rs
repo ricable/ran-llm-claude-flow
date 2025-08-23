@@ -10,7 +10,8 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Stdio};
+use tokio::process::Child;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -110,7 +111,7 @@ pub struct ProcessManager {
     workers: Arc<RwLock<HashMap<String, WorkerProcess>>>,
     
     /// Running child processes
-    child_processes: Arc<Mutex<HashMap<String, Child>>>,
+    child_processes: Arc<Mutex<HashMap<String, tokio::process::Child>>>,
     
     /// Process monitoring
     health_monitor: Arc<HealthMonitor>,
@@ -365,7 +366,7 @@ impl ProcessManager {
             match child.start_kill() {
                 Ok(_) => {
                     tracing::debug!("Sent termination signal to worker {}", worker_id);
-                    
+
                     // Wait for graceful shutdown with timeout
                     match tokio::time::timeout(self.config.graceful_shutdown_timeout, child.wait()).await {
                         Ok(Ok(exit_status)) => {
@@ -376,7 +377,9 @@ impl ProcessManager {
                         }
                         Err(_) => {
                             tracing::warn!("Worker {} did not exit gracefully, forcing termination", worker_id);
-                            let _ = child.kill().await;
+                            if let Err(e) = child.kill().await {
+                                tracing::error!("Failed to kill worker {}: {}", worker_id, e);
+                            }
                         }
                     }
                 }

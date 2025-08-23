@@ -18,7 +18,11 @@ import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor
 import shutil
 
-from ..test_framework import get_test_framework, TestResult
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from test_framework import get_test_framework, TestResult
 
 class IPCCommunicationTests:
     """Comprehensive IPC communication testing"""

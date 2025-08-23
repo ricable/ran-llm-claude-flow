@@ -443,7 +443,7 @@ impl MessageQueue {
     }
 
     /// Try to receive from broadcast channel
-    fn try_receive_broadcast(&self) -> Result<QueueMessage, TryRecvError> {
+    fn try_receive_broadcast(&self) -> std::result::Result<QueueMessage, TryRecvError> {
         let receiver = self.broadcast_receiver.read();
         receiver.try_recv()
     }
@@ -498,28 +498,14 @@ impl MessageQueue {
 
     /// Drain queues for a worker being unregistered
     async fn drain_worker_queues(&self, worker_queue: &WorkerQueue) {
-        let mut drained_count = 0u32;
-        
-        // Drain high priority
-        while worker_queue.high_priority.1.try_recv().is_ok() {
-            drained_count += 1;
-        }
-        
-        // Drain normal priority
-        while worker_queue.normal_priority.1.try_recv().is_ok() {
-            drained_count += 1;
-        }
-        
-        // Drain low priority
-        while worker_queue.low_priority.1.try_recv().is_ok() {
-            drained_count += 1;
-        }
-        
-        if drained_count > 0 {
-            tracing::warn!("Drained {} messages from worker {}", drained_count, worker_queue.worker_id);
-        }
+        // Drain all priority queues
+        while let Ok(_) = worker_queue.high_priority.1.try_recv() {}
+        while let Ok(_) = worker_queue.normal_priority.1.try_recv() {}
+        while let Ok(_) = worker_queue.low_priority.1.try_recv() {}
     }
 }
+
+// Utility functions
 
 /// Get current timestamp in milliseconds
 fn current_timestamp_ms() -> u64 {
@@ -533,88 +519,94 @@ fn current_timestamp_ms() -> u64 {
 mod tests {
     use super::*;
     use crate::ipc::IpcMessage;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn test_message_queue_basic_operations() {
         let mq = MessageQueue::new().await.unwrap();
-        
-        // Register worker
-        mq.register_worker("test-worker".to_string()).await.unwrap();
-        
-        // Send message
-        let test_message = IpcMessage::WorkerHeartbeat {
-            worker_id: "test-worker".to_string(),
+        mq.register_worker("worker-1".to_string()).await.unwrap();
+
+        let message = IpcMessage::WorkerHeartbeat {
+            worker_id: "worker-1".to_string(),
+            timestamp: 123456789,
             status: crate::ipc::WorkerStatus::Ready,
-            metrics: crate::ipc::WorkerMetrics {
-                cpu_usage_percent: 50.0,
-                memory_usage_mb: 1024,
-                tasks_completed: 10,
-                average_processing_time_ms: 100.0,
-                error_count: 0,
-            },
+            metrics: crate::ipc::WorkerMetrics::default(),
         };
+        mq.send_to_worker("worker-1", message.clone()).await.unwrap();
+
+        let (sender, received_message) = mq.receive().await.unwrap();
+        assert_eq!(sender, "worker-1");
         
-        mq.send_to_worker("test-worker", test_message).await.unwrap();
-        
-        // Receive message
-        let (sender, _received_message) = mq.receive().await.unwrap();
-        assert_eq!(sender, "test-worker");
-        
-        // Unregister worker
-        mq.unregister_worker("test-worker").await.unwrap();
+        if let IpcMessage::WorkerHeartbeat { worker_id, .. } = received_message {
+            assert_eq!(worker_id, "worker-1");
+        } else {
+            panic!("Incorrect message type received");
+        }
     }
 
     #[tokio::test]
     async fn test_priority_message_ordering() {
         let mq = MessageQueue::new().await.unwrap();
-        mq.register_worker("priority-worker".to_string()).await.unwrap();
+        mq.register_worker("worker-1".to_string()).await.unwrap();
         
-        // Send low priority message first
-        let low_msg = IpcMessage::WorkerHeartbeat {
-            worker_id: "priority-worker".to_string(),
-            status: crate::ipc::WorkerStatus::Ready,
+        let low_prio = IpcMessage::WorkerHeartbeat {
+            worker_id: "worker-1".to_string(),
+            timestamp: 1,
+            status: crate::ipc::WorkerStatus::Processing,
             metrics: crate::ipc::WorkerMetrics {
-                cpu_usage_percent: 50.0,
-                memory_usage_mb: 1024,
-                tasks_completed: 10,
-                average_processing_time_ms: 100.0,
+                memory_usage_mb: 100,
+                cpu_usage_percent: 10.0,
+                tasks_completed: 5,
+                average_processing_time_ms: 150.0,
                 error_count: 0,
             },
         };
-        mq.send_priority_message("priority-worker", low_msg, MessagePriority::Low).await.unwrap();
-        
-        // Send high priority message
-        let high_msg = IpcMessage::Error {
-            error_type: "test".to_string(),
-            message: "high priority".to_string(),
-            source_component: "test".to_string(),
+        let normal_prio = IpcMessage::DocumentProcess {
+            document_id: uuid::Uuid::new_v4(),
+            content: vec![],
+            format: crate::ipc::DocumentFormat::PlainText,
+            processing_options: crate::ipc::ProcessingOptions {
+                extract_features: true,
+                extract_parameters: true,
+                extract_commands: true,
+                extract_procedures: true,
+                quality_threshold: 0.8,
+                model_preference: None,
+            },
         };
-        mq.send_priority_message("priority-worker", high_msg, MessagePriority::High).await.unwrap();
+        let high_prio = IpcMessage::Error { code: 500, message: "Test error".to_string() };
         
-        // High priority should be received first
-        let (_, received) = mq.receive().await.unwrap();
-        if let IpcMessage::Error { message, .. } = received {
-            assert_eq!(message, "high priority");
-        } else {
-            panic!("Expected high priority message first");
-        }
+        // Send in reverse priority order
+        mq.send_priority_message("worker-1", low_prio, MessagePriority::Low).await.unwrap();
+        mq.send_priority_message("worker-1", normal_prio, MessagePriority::Normal).await.unwrap();
+        mq.send_priority_message("worker-1", high_prio, MessagePriority::High).await.unwrap();
+
+        // Receive should be in priority order
+        let (_, msg1) = mq.receive().await.unwrap();
+        let (_, msg2) = mq.receive().await.unwrap();
+        let (_, msg3) = mq.receive().await.unwrap();
+
+        assert!(matches!(msg1, IpcMessage::Error { .. }));
+        assert!(matches!(msg2, IpcMessage::DocumentProcess { .. }));
+        assert!(matches!(msg3, IpcMessage::WorkerHeartbeat { .. }));
     }
 
     #[tokio::test]
     async fn test_broadcast_messages() {
         let mq = MessageQueue::new().await.unwrap();
+        mq.register_worker("worker-1".to_string()).await.unwrap();
+        mq.register_worker("worker-2".to_string()).await.unwrap();
+
+        let message = IpcMessage::SystemShutdown;
+        mq.broadcast(message.clone()).await.unwrap();
+
+        // Both workers should receive the broadcast
+        let (sender1, received1) = mq.receive().await.unwrap();
+        let (sender2, received2) = mq.receive().await.unwrap();
         
-        // Register multiple workers
-        mq.register_worker("worker1".to_string()).await.unwrap();
-        mq.register_worker("worker2".to_string()).await.unwrap();
-        
-        // Send broadcast
-        let broadcast_msg = IpcMessage::SystemShutdown;
-        mq.broadcast(broadcast_msg).await.unwrap();
-        
-        // Should be able to receive broadcast message
-        let (sender, received) = mq.receive().await.unwrap();
-        assert_eq!(sender, "rust-core");
-        assert!(matches!(received, IpcMessage::SystemShutdown));
+        assert_eq!(sender1, "broadcast");
+        assert_eq!(sender2, "broadcast");
+        assert!(matches!(received1, IpcMessage::SystemShutdown));
+        assert!(matches!(received2, IpcMessage::SystemShutdown));
     }
 }

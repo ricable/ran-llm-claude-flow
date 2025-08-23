@@ -14,9 +14,9 @@ pub mod monitoring;
 pub use optimization::m3_max;
 pub use ipc::{message_queue, shared_memory, process_manager};
 pub use monitoring::{
-    PerformanceDashboard, 
-    M3MaxMetrics, 
-    SystemMetrics, 
+    PerformanceDashboard,
+    M3MaxMetrics,
+    SystemMetrics,
     ThroughputMetrics,
     initialize_monitoring,
     start_dashboard,
@@ -28,46 +28,106 @@ pub use monitoring::{
     log_performance_metrics
 };
 
+// Add missing ML module
+pub mod ml;
+
 use std::error::Error;
 use std::fmt;
 
 /// Main library error type
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PipelineError {
-    IoError(std::io::Error),
+    Io(String),
+    IoError(String),
+    Ipc(String),
     IpcError(String),
+    Mcp(String),
+    McpError(String),
     MonitoringError(String),
     ConfigError(String),
+    Optimization(String),
+    Processing(String),
+    Initialization(String),
 }
 
 impl fmt::Display for PipelineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            PipelineError::Io(e) => write!(f, "IO error: {}", e),
             PipelineError::IoError(e) => write!(f, "IO error: {}", e),
+            PipelineError::Ipc(e) => write!(f, "IPC error: {}", e),
             PipelineError::IpcError(e) => write!(f, "IPC error: {}", e),
+            PipelineError::Mcp(e) => write!(f, "MCP error: {}", e),
+            PipelineError::McpError(e) => write!(f, "MCP error: {}", e),
             PipelineError::MonitoringError(e) => write!(f, "Monitoring error: {}", e),
             PipelineError::ConfigError(e) => write!(f, "Configuration error: {}", e),
+            PipelineError::Optimization(e) => write!(f, "Optimization error: {}", e),
+            PipelineError::Processing(e) => write!(f, "Processing error: {}", e),
+            PipelineError::Initialization(e) => write!(f, "Initialization error: {}", e),
         }
     }
 }
 
 impl Error for PipelineError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            PipelineError::IoError(e) => Some(e),
-            _ => None,
-        }
+        None
     }
 }
 
 impl From<std::io::Error> for PipelineError {
     fn from(error: std::io::Error) -> Self {
-        PipelineError::IoError(error)
+        PipelineError::IoError(error.to_string())
     }
 }
 
 /// Result type for pipeline operations
 pub type Result<T> = std::result::Result<T, PipelineError>;
+
+/// Pipeline configuration
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PipelineConfig {
+    pub m3_max: M3MaxConfig,
+}
+
+/// M3 Max configuration
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct M3MaxConfig {
+    pub memory_pools: MemoryPoolConfig,
+}
+
+/// Memory pool configuration
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MemoryPoolConfig {
+    pub processing: u32,
+    pub ipc: u32,
+    pub cache: u32,
+}
+
+impl Default for PipelineConfig {
+    fn default() -> Self {
+        Self {
+            m3_max: M3MaxConfig::default(),
+        }
+    }
+}
+
+impl Default for M3MaxConfig {
+    fn default() -> Self {
+        Self {
+            memory_pools: MemoryPoolConfig::default(),
+        }
+    }
+}
+
+impl Default for MemoryPoolConfig {
+    fn default() -> Self {
+        Self {
+            processing: 32, // 32GB for processing
+            ipc: 8,         // 8GB for IPC
+            cache: 4,       // 4GB for cache
+        }
+    }
+}
 
 /// Initialize the entire pipeline system
 pub async fn initialize() -> Result<()> {

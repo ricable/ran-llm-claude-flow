@@ -15,6 +15,7 @@ use std::{
     },
     time::Duration,
 };
+use prometheus::core::{Atomic, AtomicF64};
 use tokio::time;
 
 use crate::config::MonitoringConfig;

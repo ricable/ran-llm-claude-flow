@@ -72,6 +72,7 @@ pub struct ServerStats {
 }
 
 /// MCP Server for coordinating pipeline operations
+#[derive(Clone)]
 pub struct McpServer {
     config: McpServerConfig,
     connections: Arc<RwLock<HashMap<Uuid, ConnectionState>>>,
@@ -102,7 +103,7 @@ struct PipelineState {
     performance_metrics: PerformanceMetrics,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 struct TaskInfo {
     task_id: Uuid,
     task_type: String,
@@ -111,7 +112,7 @@ struct TaskInfo {
     status: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 struct WorkerStatus {
     worker_id: String,
     client_type: ClientType,
@@ -120,7 +121,7 @@ struct WorkerStatus {
     tasks_completed: u64,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize)]
 struct PerformanceMetrics {
     total_tasks_processed: u64,
     average_task_duration_ms: f64,

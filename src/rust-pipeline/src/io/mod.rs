@@ -140,7 +140,7 @@ impl DocumentReader {
         // This would use actual memory mapping in production
         // For now, fall back to standard file reading
         let contents = std::fs::read(path)
-            .map_err(|e| PipelineError::Io(e))?;
+            .map_err(|e| PipelineError::Io(e.to_string()))?;
         Ok(contents)
     }
 
@@ -183,13 +183,13 @@ impl DocumentReader {
         
         // Extract all files from ZIP
         let mut archive = zip::ZipArchive::new(cursor)
-            .map_err(|e| PipelineError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
+            .map_err(|e| PipelineError::Io(e.to_string()))?;
         
         let mut combined_content = Vec::new();
         
         for i in 0..archive.len() {
             let mut file = archive.by_index(i)
-                .map_err(|e| PipelineError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
+                .map_err(|e| PipelineError::Io(e.to_string()))?;
             
             let mut content = Vec::new();
             std::io::copy(&mut file, &mut content)?;

@@ -9,6 +9,7 @@ use std::{
 };
 use systemstat::{Duration as StatDuration, Platform, System};
 
+use async_trait::async_trait;
 /// Performance measurement utilities
 pub struct PerformanceMeasurer {
     start_time: std::time::Instant,
@@ -275,7 +276,7 @@ impl HealthChecker {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 pub trait HealthCheck: Send + Sync {
     async fn check(&self) -> HealthCheckResult;
 }
@@ -299,7 +300,7 @@ pub struct HealthReport {
 /// Basic system health checks
 pub struct CpuHealthCheck;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl HealthCheck for CpuHealthCheck {
     async fn check(&self) -> HealthCheckResult {
         let system = System::new();
@@ -341,7 +342,7 @@ impl HealthCheck for CpuHealthCheck {
 
 pub struct MemoryHealthCheck;
 
-#[async_trait::async_trait]
+#[async_trait]
 impl HealthCheck for MemoryHealthCheck {
     async fn check(&self) -> HealthCheckResult {
         let system = System::new();

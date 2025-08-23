@@ -306,7 +306,7 @@ impl SharedMemoryManager {
     pub async fn defragment(&self) -> Result<()> {
         tracing::info!("Starting memory defragmentation");
         
-        // This is a simplified implementation - production would need more sophisticated defrag
+        // This is a simplified implementation - in production would need more sophisticated defrag
         let mut tracker = self.allocation_tracker.lock();
         tracker.fragmentation_factor = 0.0;
         
@@ -362,12 +362,8 @@ impl SharedMemoryManager {
     }
 
     /// Memory prefetch hint for M3 Max
-    fn prefetch_memory(&self, ptr: *const u8, _length: usize) {
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            // Apple Silicon prefetch hint
-            core::arch::aarch64::_prefetch(ptr, core::arch::aarch64::_PREFETCH_READ, core::arch::aarch64::_PREFETCH_LOCALITY3);
-        }
+    fn prefetch_memory(&self, _ptr: *const u8, _length: usize) {
+        // Prefetch is an unstable feature, so this is a no-op on stable.
     }
 
     /// Calculate memory fragmentation factor

@@ -17,7 +17,11 @@ import subprocess
 import threading
 import queue
 
-from ..test_framework import get_test_framework, TestResult, PerformanceMetrics
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from test_framework import get_test_framework, TestResult, PerformanceMetrics
 
 class PerformanceBenchmarks:
     """Comprehensive performance testing suite for M3 Max optimization"""

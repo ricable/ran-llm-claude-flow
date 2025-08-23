@@ -66,7 +66,7 @@ pub enum MessagePriority {
 }
 
 /// Queued message with priority and retry information
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct QueuedMessage {
     pub message: McpMessage,
     pub priority: MessagePriority,
@@ -249,15 +249,17 @@ impl McpClient {
             }
             
             // Insert based on priority (higher priority first)
-            let mut inserted = false;
+            let mut insert_index = None;
             for (i, existing) in queue.iter().enumerate() {
                 if priority > existing.priority {
-                    queue.insert(i, queued_message);
-                    inserted = true;
+                    insert_index = Some(i);
                     break;
                 }
             }
-            if !inserted {
+            
+            if let Some(index) = insert_index {
+                queue.insert(index, queued_message);
+            } else {
                 queue.push_back(queued_message);
             }
         }
@@ -291,15 +293,17 @@ impl McpClient {
             }
             
             // Insert based on priority (higher priority first)
-            let mut inserted = false;
+            let mut insert_index = None;
             for (i, existing) in queue.iter().enumerate() {
                 if priority > existing.priority {
-                    queue.insert(i, queued_message);
-                    inserted = true;
+                    insert_index = Some(i);
                     break;
                 }
             }
-            if !inserted {
+            
+            if let Some(index) = insert_index {
+                queue.insert(index, queued_message);
+            } else {
                 queue.push_back(queued_message);
             }
         }
@@ -435,6 +439,12 @@ impl McpClient {
     /// Get connection state
     pub fn get_connection_state(&self) -> ConnectionState {
         *self.connection_state.read()
+    }
+
+    /// Get message queue (for testing)
+    #[cfg(test)]
+    pub fn get_message_queue(&self) -> Arc<RwLock<VecDeque<QueuedMessage>>> {
+        self.message_queue.clone()
     }
 
     /// Start connection manager task

@@ -135,7 +135,7 @@ pub struct McpStream {
 }
 
 /// Protocol-level error codes
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ProtocolErrorCode {
     InvalidVersion = 1000,
     UnsupportedMessageType = 1001,
@@ -299,9 +299,9 @@ impl MessageHandler for HandshakeHandler {
         message_type == "handshake"
     }
 
-    fn handle(&self, envelope: McpEnvelope) -> Result<Option<McpEnvelope>> {
+    fn handle(&self, mut envelope: McpEnvelope) -> Result<Option<McpEnvelope>> {
         // Parse handshake payload
-        let handshake: McpHandshake = serde_json::from_value(envelope.payload)
+        let handshake: McpHandshake = serde_json::from_value(envelope.payload.clone())
             .map_err(|e| PipelineError::Mcp(format!("Invalid handshake payload: {}", e)))?;
 
         // Validate handshake
@@ -508,8 +508,8 @@ mod tests {
 
     #[test]
     fn test_checksum_calculation() {
-        let data = b"test data";
+        let data = b"hello world";
         let checksum = ProtocolUtils::calculate_checksum(data);
-        assert!(!checksum.is_empty());
+        assert_eq!(checksum, "30079c5b6736a935");
     }
 }

@@ -21,16 +21,17 @@ websocket = "0.26"
 systemstat = "0.2"
 psutil = "3.2"
 prometheus = "0.13"
-procfs = "0.16"
 rayon = "1.8"
 parking_lot = "0.12"
 once_cell = "1.19"
 anyhow = "1.0"
 thiserror = "1.0"
-uuid = { version = "1.6", features = ["v4"] }
+uuid = { version = "1.6", features = ["v4", "serde"] }
 config = "0.14"
 clap = { version = "4.4", features = ["derive"] }
 
+num_cpus = "1.16.0"
+async-trait = "0.1.77"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.8"
@@ -67,3 +68,5 @@ panic = "abort"
 opt-level = 3
 lto = true
 codegen-units = 1
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+procfs = "0.16.0"

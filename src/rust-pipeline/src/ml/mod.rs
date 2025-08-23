@@ -18,7 +18,8 @@ pub use memory_predictor::*;
 use crate::{Result, PipelineError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use std::time::SystemTime;
 use uuid::Uuid;
 
 /// ML processing request
@@ -34,7 +35,7 @@ pub struct MLRequest {
 }
 
 /// Document type enumeration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum DocumentType {
     /// Simple text documents
     PlainText,
@@ -53,7 +54,7 @@ pub enum DocumentType {
 }
 
 /// Processing priority levels
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Priority {
     Low,
     Medium,
@@ -184,7 +185,7 @@ pub struct ModelMetrics {
     pub memory_efficiency: f64,
     pub throughput_docs_per_hour: f64,
     pub error_rate: f64,
-    pub last_used: Instant,
+    pub last_used: SystemTime,
 }
 
 impl Default for ModelMetrics {
@@ -198,7 +199,7 @@ impl Default for ModelMetrics {
             memory_efficiency: 0.0,
             throughput_docs_per_hour: 0.0,
             error_rate: 0.0,
-            last_used: Instant::now(),
+            last_used: SystemTime::now(),
         }
     }
 }
@@ -225,7 +226,7 @@ pub async fn initialize_ml_module() -> Result<()> {
 
 /// Process ML request with dynamic model selection
 pub async fn process_request(request: MLRequest) -> Result<MLResponse> {
-    let start_time = Instant::now();
+    let start_time = SystemTime::now();
     
     tracing::debug!("Processing ML request: {:?}", request.request_id);
     
@@ -235,7 +236,7 @@ pub async fn process_request(request: MLRequest) -> Result<MLResponse> {
     // Select optimal model based on workload analysis
     let selected_model = model_selector::select_model(&request, &workload).await?;
     
-    tracing::info!("Selected model {} for request {}", 
+    tracing::info!("Selected model {} for request {}",
                   selected_model.name(), request.request_id);
     
     // Process request with selected model
@@ -249,9 +250,9 @@ pub async fn process_request(request: MLRequest) -> Result<MLResponse> {
 
 /// Execute ML processing with specified model
 async fn execute_ml_processing(
-    request: MLRequest, 
-    model: Qwen3Model, 
-    start_time: Instant
+    request: MLRequest,
+    model: Qwen3Model,
+    start_time: SystemTime
 ) -> Result<MLResponse> {
     // Simulate ML processing (in real implementation, this would call Python workers)
     let processing_time = Duration::from_millis(100);
@@ -267,10 +268,12 @@ async fn execute_ml_processing(
         ProcessingStatus::QualityFailure
     };
     
+    let elapsed = start_time.elapsed().unwrap_or(Duration::from_secs(0));
+    
     Ok(MLResponse {
         request_id: request.request_id,
         model_used: model,
-        processing_time: start_time.elapsed(),
+        processing_time: elapsed,
         quality_score,
         memory_used_mb: specs.memory_gb as u64 * 1024,
         status,

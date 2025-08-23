@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::SystemTime;
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
@@ -565,7 +566,7 @@ impl ModelSelector {
             }
             
             metrics.error_rate = 1.0 - (metrics.successful_requests as f64 / metrics.total_requests as f64);
-            metrics.last_used = Instant::now();
+            metrics.last_used = SystemTime::now();
         }
 
         Ok(())

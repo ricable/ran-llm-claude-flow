@@ -75,7 +75,7 @@ pub struct TaskDefinition {
     pub timeout_seconds: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum TaskType {
     DocumentProcessing,
     FeatureExtraction,
@@ -93,17 +93,17 @@ pub struct ModelRequirements {
     pub require_local: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ModelSize {
     Small,    // qwen3-1.7b
-    Medium,   // qwen3-7b  
+    Medium,   // qwen3-7b
     Large,    // qwen3-30b
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum TaskPriority {
     Low = 1,
-    Normal = 2, 
+    Normal = 2,
     High = 3,
     Critical = 4,
 }
@@ -117,7 +117,7 @@ pub struct TaskResult {
     pub error_message: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum TaskStatus {
     Pending,
     Running,
@@ -186,7 +186,7 @@ pub struct Alert {
     pub metrics: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum AlertSeverity {
     Info,
     Warning,
@@ -253,7 +253,7 @@ pub struct McpConnection {
     pub last_heartbeat: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ClientType {
     RustCore,
     PythonWorker,

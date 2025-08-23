@@ -1,0 +1,9 @@
+PhantomData<(&SelectionCriteria, lock_api::GuardNoSend)>
+lock_api::rwlock::RwLockReadGuard<'_, parking_lot::raw_rwlock::RawRwLock, SelectionCriteria>
+{coroutine witness@ModelSelector::evaluate_and_select::{closure#0}}
+{async fn body of ModelSelector::evaluate_and_select()}
+impl futures::Future<Output = Result<SelectionResult, PipelineError>>
+{coroutine witness@ModelSelector::select_model::{closure#0}}
+impl futures::Future<Output = Result<ran_document_pipeline::ml::Qwen3Model, PipelineError>>
+{coroutine witness@ran_document_pipeline::ml::process_request::{closure#0}}
+impl futures::Future<Output = Result<MLResponse, PipelineError>>

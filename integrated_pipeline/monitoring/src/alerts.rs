@@ -16,6 +16,7 @@ use std::{
     },
 };
 use tokio::{sync::broadcast, time};
+use async_trait::async_trait;
 
 use crate::{
     bottleneck_analyzer::{Bottleneck, BottleneckSeverity, BottleneckType},
@@ -542,7 +543,7 @@ impl AlertRateLimiter {
 }
 
 /// Alert channel trait
-#[async_trait::async_trait]
+#[async_trait]
 pub trait AlertChannel: Send + Sync {
     fn name(&self) -> &str;
     fn should_send(&self, alert: &Alert) -> bool;
@@ -572,7 +573,7 @@ impl LogAlertChannel {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl AlertChannel for LogAlertChannel {
     fn name(&self) -> &str {
         &self.name
@@ -634,7 +635,7 @@ impl WebhookAlertChannel {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl AlertChannel for WebhookAlertChannel {
     fn name(&self) -> &str {
         &self.name
@@ -693,7 +694,7 @@ impl EmailAlertChannel {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl AlertChannel for EmailAlertChannel {
     fn name(&self) -> &str {
         &self.name

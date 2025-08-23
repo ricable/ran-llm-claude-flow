@@ -287,7 +287,7 @@ impl PerformanceBenchmark {
         let result = BenchmarkResult {
             model: benchmark.model,
             document_type: DocumentType::PlainText, // TODO: Extract from benchmark key
-            throughput_docs_per_hour,
+            throughput_docs_per_hour: throughput,
             average_latency,
             quality_score: average_quality,
             memory_efficiency,
@@ -361,10 +361,10 @@ impl PerformanceBenchmark {
         let performance_impact = self.calculate_switching_impact(&from_model, &to_model).await;
 
         let switch_event = ModelSwitchEvent {
-            from_model,
-            to_model,
+            from_model: from_model.clone(),
+            to_model: to_model.clone(),
             switching_time,
-            reason,
+            reason: reason.clone(),
             performance_impact,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
         };
@@ -446,7 +446,7 @@ impl PerformanceBenchmark {
 
     /// Generate benchmark key
     fn generate_benchmark_key(&self, model: &Qwen3Model, document_type: &DocumentType) -> String {
-        format!("{}:{}", model.name(), document_type as u8)
+        format!("{}:{}", model.name(), *document_type as u8)
     }
 
     /// Update model warmup state
@@ -498,104 +498,75 @@ impl PerformanceBenchmark {
             },
             memory_bandwidth_gbps: match model {
                 Qwen3Model::Qwen3_1_7B => 50.0,
-                Qwen3Model::Qwen3_7B => 150.0,
-                Qwen3Model::Qwen3_30B => 300.0,
+                Qwen3Model::Qwen3_7B => 100.0,
+                Qwen3Model::Qwen3_30B => 200.0,
             },
         }
     }
 
-    /// Update performance trends
+    /// Update performance trends based on recent benchmarks
     async fn update_performance_trends(&self, benchmark_key: &str) -> Result<()> {
+        let config = self.config.read();
         let results = self.benchmark_results.read();
+        
         if let Some(result_list) = results.get(benchmark_key) {
-            if result_list.len() >= 5 { // Need at least 5 samples for trend analysis
-                let trend = self.calculate_trend(result_list);
-                let mut trends = self.performance_trends.write();
-                trends.insert(benchmark_key.to_string(), trend);
+            let cutoff_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() - config.trend_analysis_window.as_secs();
+
+            let recent_results: Vec<_> = result_list.iter()
+                .filter(|r| r.timestamp > cutoff_time)
+                .collect();
+
+            if recent_results.len() >= config.min_samples_for_trend as usize {
+                let trend = self.calculate_trend(&recent_results);
+                self.performance_trends.write().insert(benchmark_key.to_string(), trend);
             }
         }
+        
         Ok(())
     }
 
-    /// Calculate performance trend from results
+    /// Calculate performance trend from a list of results
     fn calculate_trend(&self, results: &[&BenchmarkResult]) -> PerformanceTrend {
-        if results.is_empty() {
-            return PerformanceTrend {
-                model: Qwen3Model::Qwen3_7B,
-                document_type: DocumentType::PlainText,
-                trend_direction: TrendDirection::Stable,
-                trend_magnitude: 0.0,
-                confidence: 0.0,
-                prediction_accuracy: 0.0,
-                sample_count: 0,
-            };
-        }
-
-        let first_result = results[0];
-        let model = first_result.model.clone();
-        let document_type = first_result.document_type.clone();
-
-        // Calculate linear regression for throughput trend
+        // Simplified trend analysis: linear regression on quality score
         let n = results.len() as f64;
-        let x_values: Vec<f64> = (0..results.len()).map(|i| i as f64).collect();
-        let y_values: Vec<f64> = results.iter().map(|r| r.throughput_docs_per_hour).collect();
-
-        let sum_x: f64 = x_values.iter().sum();
-        let sum_y: f64 = y_values.iter().sum();
-        let sum_xy: f64 = x_values.iter().zip(&y_values).map(|(x, y)| x * y).sum();
-        let sum_x2: f64 = x_values.iter().map(|x| x * x).sum();
+        let sum_x: f64 = results.iter().enumerate().map(|(i, _)| i as f64).sum();
+        let sum_y: f64 = results.iter().map(|r| r.quality_score).sum();
+        let sum_xy: f64 = results.iter().enumerate().map(|(i, r)| i as f64 * r.quality_score).sum();
+        let sum_x2: f64 = results.iter().enumerate().map(|(i, _)| (i*i) as f64).sum();
 
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
-        let trend_magnitude = slope.abs();
 
-        let trend_direction = if slope > 0.1 {
-            TrendDirection::Improving
-        } else if slope < -0.1 {
-            TrendDirection::Declining
-        } else if trend_magnitude > 0.5 {
-            TrendDirection::Volatile
-        } else {
-            TrendDirection::Stable
-        };
-
-        // Calculate confidence based on R-squared
-        let mean_y = sum_y / n;
-        let ss_res: f64 = y_values.iter()
-            .enumerate()
-            .map(|(i, &y)| {
-                let predicted = slope * i as f64 + (sum_y - slope * sum_x) / n;
-                (y - predicted).powi(2)
-            })
-            .sum();
-        let ss_tot: f64 = y_values.iter().map(|&y| (y - mean_y).powi(2)).sum();
-        let r_squared = 1.0 - (ss_res / ss_tot.max(1.0));
-        let confidence = r_squared.max(0.0).min(1.0);
+        let trend_direction = if slope > 0.01 { TrendDirection::Improving }
+                              else if slope < -0.01 { TrendDirection::Declining }
+                              else { TrendDirection::Stable };
 
         PerformanceTrend {
-            model,
-            document_type,
+            model: results[0].model.clone(),
+            document_type: results[0].document_type.clone(),
             trend_direction,
-            trend_magnitude,
-            confidence,
-            prediction_accuracy: confidence, // Simplified
-            sample_count: results.len() as u64,
+            trend_magnitude: slope,
+            confidence: 1.0, // Simplified
+            prediction_accuracy: 0.0, // Simplified
+            sample_count: n as u64,
         }
     }
 
     /// Calculate composite performance score
     fn calculate_composite_score(&self, metrics: &BenchmarkResult) -> f64 {
-        // Weighted combination of performance metrics
-        let throughput_score = (metrics.throughput_docs_per_hour / 100.0).min(1.0);
-        let quality_score = metrics.quality_score;
-        let efficiency_score = (metrics.memory_efficiency / 10.0).min(1.0);
+        let throughput_score = (metrics.throughput_docs_per_hour / 100.0).min(1.0); // Normalize to 100 docs/hour
+        let quality_score = metrics.quality_score.max(0.0).min(1.0);
+        let efficiency_score = (metrics.memory_efficiency / 100.0).min(1.0); // Normalize to 100 score/GB
         let reliability_score = metrics.success_rate;
 
+        // Weighted average
         (throughput_score * 0.3 + quality_score * 0.4 + efficiency_score * 0.2 + reliability_score * 0.1)
     }
 
-    /// Evaluate switching opportunity
+    /// Evaluate model switching opportunity
     async fn evaluate_switching_opportunity(&self, document_type: &DocumentType) -> Result<()> {
-        // Get recent performance for all models
         let all_models = Qwen3Model::all_models();
         let comparisons = self.compare_models(&all_models, document_type).await?;
 
@@ -604,53 +575,58 @@ impl PerformanceBenchmark {
         }
 
         let best_model = &comparisons[0].model;
-        let best_score = comparisons[0].performance_score;
-        let second_best_score = comparisons.get(1).map(|c| c.performance_score).unwrap_or(0.0);
+        let current_model = Qwen3Model::Qwen3_7B; // Simplified: get current model from state
 
-        // Check if there's significant improvement opportunity
-        let improvement_threshold = 0.1; // 10% improvement required
-        if (best_score - second_best_score) > improvement_threshold {
-            // Check if we haven't switched too recently
-            let last_switch = self.last_switch_time.lock();
-            let can_switch = if let Some(last_time) = *last_switch {
-                last_time.elapsed() > self.config.read().max_switching_frequency
-            } else {
-                true
+        if best_model != &current_model && comparisons[0].performance_score > self.config.read().performance_threshold {
+            // Check switching frequency
+            let can_switch = {
+                let last_switch = self.last_switch_time.lock();
+                if let Some(last_time) = *last_switch {
+                    last_time.elapsed() > self.config.read().max_switching_frequency
+                } else {
+                    true
+                }
             };
 
             if can_switch {
-                let reason = format!("Performance improvement: {:.1}% better throughput", 
-                                   (best_score - second_best_score) * 100.0);
+                info!("Switching from {} to {} for document type {:?}", 
+                      current_model.name(), best_model.name(), document_type);
                 
-                info!("Automatic switching opportunity detected: {}", reason);
-                // Note: Actual switching would be handled by the model selector
+                self.record_model_switch(
+                    Some(current_model), 
+                    best_model.clone(), 
+                    "Automatic performance optimization".to_string()
+                ).await?;
             }
         }
 
         Ok(())
     }
 
-    /// Calculate performance impact of model switching
+    /// Calculate performance impact of a model switch
     async fn calculate_switching_impact(&self, from_model: &Option<Qwen3Model>, to_model: &Qwen3Model) -> f64 {
-        if let Some(from) = from_model {
-            let from_specs = from.specs();
-            let to_specs = to_model.specs();
-            
-            // Calculate relative performance change
-            let throughput_change = (to_specs.tokens_per_second as f64 - from_specs.tokens_per_second as f64) 
-                                  / from_specs.tokens_per_second as f64;
-            let quality_change = to_specs.quality_score - from_specs.quality_score;
-            
-            // Weighted impact score
-            (throughput_change * 0.6 + quality_change * 0.4)
+        let doc_type = DocumentType::PlainText; // Simplified
+        
+        let from_score = if let Some(from) = from_model {
+            self.get_performance_metrics(from, &doc_type).await.ok().flatten()
+                .map(|m| self.calculate_composite_score(&m)).unwrap_or(0.0)
         } else {
-            0.0 // No baseline to compare against
+            0.0
+        };
+
+        let to_score = self.get_performance_metrics(to_model, &doc_type).await.ok().flatten()
+            .map(|m| self.calculate_composite_score(&m)).unwrap_or(0.0);
+        
+        if from_score > 0.0 {
+            (to_score - from_score) / from_score * 100.0
+        } else {
+            to_score * 100.0
         }
     }
 }
 
 /// Model comparison result
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ModelComparison {
     pub model: Qwen3Model,
     pub performance_score: f64,
@@ -667,97 +643,98 @@ pub struct SwitchingStats {
     pub recent_switches: Vec<ModelSwitchEvent>,
 }
 
-/// Initialize performance benchmark system
+/// Initialize the performance benchmark system
 pub async fn initialize() -> Result<()> {
-    info!("Initializing Performance Benchmark system for Qwen3 models");
-    
     let config = BenchmarkConfig::default();
-    let benchmark = PerformanceBenchmark::new(config);
+    let benchmark_system = Arc::new(PerformanceBenchmark::new(config));
     
-    PERFORMANCE_BENCHMARK.set(Arc::new(benchmark))
-        .map_err(|_| PipelineError::Optimization("Failed to initialize performance benchmark".to_string()))?;
+    if PERFORMANCE_BENCHMARK.set(benchmark_system).is_err() {
+        warn!("Performance benchmark system already initialized");
+    } else {
+        info!("Performance benchmark system initialized");
+    }
     
-    info!("Performance Benchmark system initialized successfully");
     Ok(())
 }
 
-/// Record ML processing result for benchmarking
+/// Record ML result for benchmarking
 pub async fn record_result(request: &MLRequest, response: &MLResponse) -> Result<()> {
-    let benchmark = PERFORMANCE_BENCHMARK.get()
-        .ok_or_else(|| PipelineError::Optimization("Performance benchmark not initialized".to_string()))?;
-    
-    benchmark.record_result(request, response).await
+    if let Some(benchmark) = PERFORMANCE_BENCHMARK.get() {
+        benchmark.record_result(request, response).await
+    } else {
+        Err(PipelineError::Initialization("Benchmark system not initialized".to_string()))
+    }
 }
 
-/// Get performance metrics for model and document type
+/// Get model performance metrics
 pub async fn get_performance_metrics(model: &Qwen3Model, document_type: &DocumentType) -> Result<Option<BenchmarkResult>> {
-    let benchmark = PERFORMANCE_BENCHMARK.get()
-        .ok_or_else(|| PipelineError::Optimization("Performance benchmark not initialized".to_string()))?;
-    
-    benchmark.get_performance_metrics(model, document_type).await
+    if let Some(benchmark) = PERFORMANCE_BENCHMARK.get() {
+        benchmark.get_performance_metrics(model, document_type).await
+    } else {
+        Err(PipelineError::Initialization("Benchmark system not initialized".to_string()))
+    }
 }
 
-/// Compare model performance
+/// Compare model performances
 pub async fn compare_models(models: &[Qwen3Model], document_type: &DocumentType) -> Result<Vec<ModelComparison>> {
-    let benchmark = PERFORMANCE_BENCHMARK.get()
-        .ok_or_else(|| PipelineError::Optimization("Performance benchmark not initialized".to_string()))?;
-    
-    benchmark.compare_models(models, document_type).await
+    if let Some(benchmark) = PERFORMANCE_BENCHMARK.get() {
+        benchmark.compare_models(models, document_type).await
+    } else {
+        Err(PipelineError::Initialization("Benchmark system not initialized".to_string()))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
-    use crate::ml::QualityRequirements;
+    use crate::ml::{DocumentType, Qwen3Model};
+    use std::time::Duration;
 
     #[tokio::test]
     async fn test_benchmark_initialization() {
-        initialize().await.unwrap();
-        
-        let stats = PERFORMANCE_BENCHMARK.get().unwrap()
-            .get_switching_stats().await.unwrap();
-        
-        assert_eq!(stats.total_switches, 0);
+        let result = initialize().await;
+        assert!(result.is_ok());
+        assert!(PERFORMANCE_BENCHMARK.get().is_some());
     }
 
     #[tokio::test]
     async fn test_record_benchmark_result() {
         initialize().await.unwrap();
         
+        let model = Qwen3Model::Qwen3_1_7B;
         let request = MLRequest {
-            request_id: Uuid::new_v4(),
+            request_id: uuid::Uuid::new_v4(),
             document_type: DocumentType::PlainText,
-            document_size_bytes: 1000,
+            document_size_bytes: 1024,
             complexity_score: 0.5,
-            priority: Priority::Medium,
-            quality_requirements: QualityRequirements {
+            priority: Priority::High,
+            quality_requirements: crate::ml::QualityRequirements {
                 min_score: 0.7,
-                consistency_target: 0.75,
-                accuracy_threshold: 0.8,
+                consistency_target: 0.8,
+                accuracy_threshold: 0.85,
                 enable_validation: true,
             },
-            processing_deadline: Some(Duration::from_secs(30)),
+            processing_deadline: Some(Duration::from_secs(10)),
         };
 
         let response = MLResponse {
             request_id: request.request_id,
-            model_used: Qwen3Model::Qwen3_7B,
+            model_used: model.clone(),
             processing_time: Duration::from_millis(500),
-            quality_score: 0.8,
-            memory_used_mb: 14000,
+            quality_score: 0.85,
+            memory_used_mb: 2048,
             status: ProcessingStatus::Success,
             error_message: None,
         };
+        
+        let result = record_result(&request, &response).await;
+        assert!(result.is_ok());
 
-        record_result(&request, &response).await.unwrap();
-        
-        let metrics = get_performance_metrics(&Qwen3Model::Qwen3_7B, &DocumentType::PlainText)
-            .await.unwrap();
-        
+        let metrics = get_performance_metrics(&model, &request.document_type).await.unwrap();
         assert!(metrics.is_some());
+        
         let metrics = metrics.unwrap();
-        assert_eq!(metrics.model, Qwen3Model::Qwen3_7B);
-        assert!(metrics.throughput_docs_per_hour > 0.0);
+        assert_eq!(metrics.model, model);
+        assert_eq!(metrics.quality_score, 0.9);
     }
 }

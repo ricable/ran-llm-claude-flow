@@ -868,7 +868,7 @@ impl McpHost {
                                 }
                             }
 
-                            let _ = event_sender.send(HostEvent::TaskDispatched(task_id, worker_id));
+                            let _ = event_sender.send(HostEvent::TaskDispatched(task_id, worker_id.clone()));
                             debug!("Dispatched task {} to worker {}", task_id, worker_id);
                         } else {
                             // No available workers, put task back in queue

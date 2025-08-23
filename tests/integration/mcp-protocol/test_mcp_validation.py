@@ -15,7 +15,11 @@ from pathlib import Path
 import subprocess
 import logging
 
-from ..test_framework import get_test_framework, TestResult
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from test_framework import get_test_framework, TestResult
 
 class MCPProtocolTests:
     """MCP Protocol validation and testing suite"""

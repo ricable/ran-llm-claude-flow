@@ -6,7 +6,7 @@ Tests the complete pipeline from workload analysis to model execution.
 */
 
 use ran_document_pipeline::ml::*;
-use ran_document_pipeline::{Result, PipelineConfig, initialize_pipeline};
+use ran_document_pipeline::{Result, PipelineConfig};
 use std::time::Duration;
 use tokio;
 use uuid::Uuid;
@@ -89,10 +89,10 @@ async fn test_model_selection_logic() {
     
     let test_cases = vec![
         // (doc_type, size, complexity, priority, expected_model_range)
-        (DocumentType::PlainText, 1024, 0.2, Priority::Low, vec![Qwen3Model::Qwen3_1_7B]),
-        (DocumentType::Pdf, 1_000_000, 0.7, Priority::Medium, vec![Qwen3Model::Qwen3_7B, Qwen3Model::Qwen3_30B]),
-        (DocumentType::Technical, 2_000_000, 0.9, Priority::Critical, vec![Qwen3Model::Qwen3_30B]),
-        (DocumentType::Standards3Gpp, 5_000_000, 0.95, Priority::Critical, vec![Qwen3Model::Qwen3_30B]),
+        (DocumentType::PlainText, 1024, 0.2, Priority::High, vec![Qwen3Model::Qwen3_1_7B]),
+        (DocumentType::Pdf, 1_000_000, 0.7, Priority::High, vec![Qwen3Model::Qwen3_7B, Qwen3Model::Qwen3_30B]),
+        (DocumentType::Technical, 2_000_000, 0.9, Priority::High, vec![Qwen3Model::Qwen3_30B]),
+        (DocumentType::Standards3Gpp, 5_000_000, 0.95, Priority::High, vec![Qwen3Model::Qwen3_30B]),
     ];
 
     for (doc_type, size, complexity, priority, expected_models) in test_cases {
@@ -262,7 +262,7 @@ async fn test_concurrent_processing() {
     let results: Vec<_> = futures::future::join_all(handles)
         .await
         .into_iter()
-        .collect::<Result<Vec<_>, _>>()
+        .collect::<std::result::Result<Vec<_>, _>>()
         .unwrap();
     
     // Verify all requests succeeded

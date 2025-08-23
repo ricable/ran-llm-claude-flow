@@ -102,19 +102,19 @@ pub async fn get_active_alerts() -> Vec<PerformanceAlert> {
 /// Check if system is healthy based on current metrics
 pub async fn is_system_healthy() -> bool {
     let m3_metrics = get_current_m3_metrics().await;
-    let system_metrics = get_current_system_metrics().await;
+    let _system_metrics = get_current_system_metrics().await;
     let throughput_metrics = get_current_throughput_metrics().await;
     
     // Define health criteria
-    let memory_healthy = m3_metrics
+    let memory_healthy = m3_metrics.as_ref()
         .map(|m| (m.unified_memory_used as f64 / m.unified_memory_total as f64) < 0.9)
         .unwrap_or(false);
     
-    let cpu_healthy = m3_metrics
+    let cpu_healthy = m3_metrics.as_ref()
         .map(|m| m.cpu_load < 0.8)
         .unwrap_or(false);
     
-    let throughput_healthy = throughput_metrics
+    let throughput_healthy = throughput_metrics.as_ref()
         .map(|t| t.error_rate < 5.0) // Less than 5% error rate
         .unwrap_or(false);
     
@@ -124,7 +124,7 @@ pub async fn is_system_healthy() -> bool {
 /// Generate a performance summary report
 pub async fn generate_performance_report() -> String {
     let m3_metrics = get_current_m3_metrics().await;
-    let system_metrics = get_current_system_metrics().await;
+    let _system_metrics = get_current_system_metrics().await;
     let throughput_metrics = get_current_throughput_metrics().await;
     let alerts = get_active_alerts().await;
     let health_status = is_system_healthy().await;
@@ -157,7 +157,7 @@ pub async fn generate_performance_report() -> String {
     }
     
     // Throughput metrics
-    if let Some(throughput) = throughput_metrics {
+    if let Some(throughput) = throughput_metrics.as_ref() {
         report.push_str("📈 Pipeline Performance:\n");
         report.push_str(&format!("  Documents Processed: {}\n", throughput.documents_processed));
         report.push_str(&format!("  Throughput: {:.1} docs/min\n", throughput.documents_per_minute));

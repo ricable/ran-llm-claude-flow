@@ -1,0 +1,2 @@
+tokio::sync::oneshot::Sender<std::result::Result<McpMessage, PipelineError>>: Clone
+std::option::Option<tokio::sync::oneshot::Sender<std::result::Result<McpMessage, PipelineError>>>

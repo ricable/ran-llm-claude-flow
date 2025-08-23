@@ -500,7 +500,18 @@ def optimize_m3_system(workload_type: str = "inference",
         async def run_optimization():
             return await pipeline_optimizer.optimize_inference_pipeline(model_path, workload_type)
         
-        result = asyncio.run(run_optimization())
+        # Check if we're already in an event loop
+        try:
+            loop = asyncio.get_running_loop()
+            # If we're in a running loop, create a task instead
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, run_optimization())
+                result = future.result()
+        except RuntimeError:
+            # No running loop, safe to use asyncio.run()
+            result = asyncio.run(run_optimization())
+        
         return result
         
     except Exception as e:

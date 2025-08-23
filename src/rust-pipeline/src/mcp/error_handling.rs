@@ -103,7 +103,7 @@ impl CircuitBreaker {
 
     /// Check if circuit breaker allows execution
     async fn can_execute(&self) -> Result<bool> {
-        let current_state = *self.state.read().await;
+        let current_state = self.state.read().await.clone();
 
         match current_state {
             CircuitBreakerState::Closed => Ok(true),
@@ -129,12 +129,12 @@ impl CircuitBreaker {
 
     /// Record successful operation
     async fn record_success(&self) {
-        let current_state = *self.state.read().await;
+        let current_state = self.state.read().await.clone();
         
         match current_state {
             CircuitBreakerState::HalfOpen => {
                 let success_count = self.success_count.fetch_add(1, Ordering::Relaxed) + 1;
-                if success_count >= self.config.success_threshold {
+                if success_count >= self.config.success_threshold.into() {
                     *self.state.write().await = CircuitBreakerState::Closed;
                     self.failure_count.store(0, Ordering::Relaxed);
                     info!("Circuit breaker '{}' recovered to CLOSED", self.name);
@@ -152,10 +152,10 @@ impl CircuitBreaker {
         let failure_count = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
         *self.last_failure_time.write().await = Some(Instant::now());
 
-        let current_state = *self.state.read().await;
+        let current_state = self.state.read().await.clone();
 
         if matches!(current_state, CircuitBreakerState::Closed | CircuitBreakerState::HalfOpen) &&
-           failure_count >= self.config.failure_threshold {
+           failure_count >= self.config.failure_threshold.into() {
             *self.state.write().await = CircuitBreakerState::Open;
             warn!("Circuit breaker '{}' opened after {} failures", self.name, failure_count);
         }
@@ -163,7 +163,7 @@ impl CircuitBreaker {
 
     /// Get current state
     pub async fn get_state(&self) -> CircuitBreakerState {
-        *self.state.read().await
+        self.state.read().await.clone()
     }
 
     /// Get metrics
@@ -397,7 +397,7 @@ impl HealthMonitor {
             }
 
             // Update success rate
-            let success_count = component_health.total_checks - component_health.consecutive_failures.min(component_health.total_checks);
+            let success_count = component_health.total_checks - u64::from(component_health.consecutive_failures.min(component_health.total_checks as u32));
             component_health.success_rate = success_count as f64 / component_health.total_checks as f64;
 
             debug!("Health check recorded for {}: {:?} (success rate: {:.2}%)", 

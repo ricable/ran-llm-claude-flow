@@ -595,3 +595,70 @@ class MockEnvironmentManager:
                 patcher.stop()
             except:
                 pass
+class MockDocumentFactory:
+    """Factory for creating mock documents for testing"""
+    
+    def __init__(self):
+        self.document_counter = 0
+    
+    def generate_single_document(self, doc_id: str = None) -> Dict[str, Any]:
+        """Generate a single mock document"""
+        if doc_id is None:
+            doc_id = f"doc_{self.document_counter}"
+            self.document_counter += 1
+        
+        return {
+            "id": doc_id,
+            "content": f"This is test document content for {doc_id}. " * random.randint(10, 50),
+            "metadata": {
+                "title": f"Test Document {doc_id}",
+                "type": "technical",
+                "size": random.randint(1000, 10000),
+                "created_at": time.time(),
+                "technical_terms": ["LTE", "5G", "eNodeB", "gNodeB"],
+                "quality_score": random.uniform(7.0, 9.5)
+            }
+        }
+    
+    def generate_mixed_documents(self, count: int) -> List[Dict[str, Any]]:
+        """Generate a mix of different document types"""
+        documents = []
+        
+        for i in range(count):
+            doc_type = random.choice(["technical", "configuration", "troubleshooting"])
+            size_category = random.choice(["small", "medium", "large"])
+            
+            if size_category == "small":
+                content_multiplier = random.randint(5, 15)
+            elif size_category == "medium":
+                content_multiplier = random.randint(20, 50)
+            else:  # large
+                content_multiplier = random.randint(60, 100)
+            
+            document = {
+                "id": f"mixed_doc_{i}",
+                "content": f"This is {doc_type} document content. " * content_multiplier,
+                "metadata": {
+                    "title": f"Mixed Document {i}",
+                    "type": doc_type,
+                    "size_category": size_category,
+                    "size": len(f"This is {doc_type} document content. " * content_multiplier),
+                    "created_at": time.time(),
+                    "technical_terms": self._get_technical_terms_by_type(doc_type),
+                    "quality_score": random.uniform(7.0, 9.5)
+                }
+            }
+            documents.append(document)
+        
+        return documents
+    
+    def _get_technical_terms_by_type(self, doc_type: str) -> List[str]:
+        """Get technical terms based on document type"""
+        terms_map = {
+            "technical": ["LTE", "5G", "NR", "eNodeB", "gNodeB", "MIMO", "beamforming"],
+            "configuration": ["RRC", "PDCP", "MAC", "PHY", "parameters", "settings"],
+            "troubleshooting": ["alarms", "KPIs", "performance", "optimization", "debugging"]
+        }
+        available_terms = terms_map.get(doc_type, ["generic", "term"])
+        sample_size = min(random.randint(3, 6), len(available_terms))
+        return random.sample(available_terms, k=sample_size)
