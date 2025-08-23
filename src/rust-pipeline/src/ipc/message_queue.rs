@@ -5,16 +5,16 @@ High-performance message queue for inter-process communication between Rust core
 Uses lock-free queues optimized for M3 Max architecture.
 */
 
-use crate::{Result, PipelineError};
 use crate::ipc::IpcMessage;
+use crate::{PipelineError, Result};
 use crossbeam_channel::{self, Receiver, Sender, TryRecvError, TrySendError};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 use uuid::Uuid;
 
@@ -56,20 +56,20 @@ pub struct QueueStats {
 pub struct MessageQueue {
     /// Per-worker message queues (worker_id -> channels)
     worker_queues: Arc<DashMap<String, WorkerQueue>>,
-    
+
     /// Broadcast channel for system-wide messages
     broadcast_sender: Sender<QueueMessage>,
     broadcast_receiver: Arc<RwLock<Receiver<QueueMessage>>>,
-    
+
     /// Message routing table
     routing_table: Arc<DashMap<String, String>>, // message_type -> preferred_worker
-    
+
     /// Performance metrics
     metrics: Arc<QueueMetrics>,
-    
+
     /// Configuration
     config: MessageQueueConfig,
-    
+
     /// Notification for new messages
     message_notify: Arc<Notify>,
 }
@@ -126,14 +126,16 @@ impl MessageQueue {
     pub async fn new() -> Result<Self> {
         Self::with_config(MessageQueueConfig::default()).await
     }
-    
+
     /// Create message queue with custom configuration
     pub async fn with_config(config: MessageQueueConfig) -> Result<Self> {
-        tracing::info!("Initializing message queue system with max queue size: {}", config.max_queue_size);
-        
-        let (broadcast_sender, broadcast_receiver) = 
-            crossbeam_channel::unbounded();
-        
+        tracing::info!(
+            "Initializing message queue system with max queue size: {}",
+            config.max_queue_size
+        );
+
+        let (broadcast_sender, broadcast_receiver) = crossbeam_channel::unbounded();
+
         let metrics = QueueMetrics {
             messages_sent: AtomicU64::new(0),
             messages_received: AtomicU64::new(0),
@@ -158,11 +160,11 @@ impl MessageQueue {
     /// Register a new worker with dedicated queues
     pub async fn register_worker(&self, worker_id: String) -> Result<()> {
         tracing::info!("Registering worker: {}", worker_id);
-        
+
         let high_priority = crossbeam_channel::bounded(self.config.max_queue_size / 4);
         let normal_priority = crossbeam_channel::bounded(self.config.max_queue_size / 2);
         let low_priority = crossbeam_channel::bounded(self.config.max_queue_size / 4);
-        
+
         let worker_queue = WorkerQueue {
             high_priority,
             normal_priority,
@@ -171,9 +173,9 @@ impl MessageQueue {
             last_activity: AtomicU64::new(current_timestamp_ms()),
             is_active: true,
         };
-        
+
         self.worker_queues.insert(worker_id.clone(), worker_queue);
-        
+
         tracing::info!("Worker {} registered successfully", worker_id);
         Ok(())
     }
@@ -181,17 +183,17 @@ impl MessageQueue {
     /// Unregister a worker and cleanup queues
     pub async fn unregister_worker(&self, worker_id: &str) -> Result<()> {
         tracing::info!("Unregistering worker: {}", worker_id);
-        
+
         if let Some((_, mut worker_queue)) = self.worker_queues.remove(worker_id) {
             worker_queue.is_active = false;
-            
+
             // Drain remaining messages to avoid blocking senders
             self.drain_worker_queues(&worker_queue).await;
         }
-        
+
         // Remove from routing table
         self.routing_table.retain(|_, v| v != worker_id);
-        
+
         tracing::info!("Worker {} unregistered successfully", worker_id);
         Ok(())
     }
@@ -213,7 +215,12 @@ impl MessageQueue {
     }
 
     /// Send high priority message to specific worker
-    pub async fn send_priority_message(&self, worker_id: &str, message: IpcMessage, priority: MessagePriority) -> Result<()> {
+    pub async fn send_priority_message(
+        &self,
+        worker_id: &str,
+        message: IpcMessage,
+        priority: MessagePriority,
+    ) -> Result<()> {
         let queue_message = QueueMessage {
             id: Uuid::new_v4(),
             sender: "rust-core".to_string(),
@@ -241,12 +248,13 @@ impl MessageQueue {
             payload: message,
         };
 
-        self.broadcast_sender.send(broadcast_message)
+        self.broadcast_sender
+            .send(broadcast_message)
             .map_err(|e| PipelineError::Ipc(format!("Broadcast failed: {}", e)))?;
 
         self.metrics.messages_sent.fetch_add(1, Ordering::Relaxed);
         self.message_notify.notify_waiters();
-        
+
         tracing::debug!("Broadcast message sent to all workers");
         Ok(())
     }
@@ -256,25 +264,31 @@ impl MessageQueue {
         loop {
             // First check for broadcast messages
             if let Ok(broadcast_msg) = self.try_receive_broadcast() {
-                self.metrics.messages_received.fetch_add(1, Ordering::Relaxed);
+                self.metrics
+                    .messages_received
+                    .fetch_add(1, Ordering::Relaxed);
                 return Ok((broadcast_msg.sender, broadcast_msg.payload));
             }
 
             // Then check worker queues by priority
             if let Some((sender, message)) = self.try_receive_from_workers().await? {
-                self.metrics.messages_received.fetch_add(1, Ordering::Relaxed);
-                
+                self.metrics
+                    .messages_received
+                    .fetch_add(1, Ordering::Relaxed);
+
                 // Calculate latency
                 let latency_ms = current_timestamp_ms() - message.timestamp;
-                self.metrics.total_latency_ms.fetch_add(latency_ms, Ordering::Relaxed);
+                self.metrics
+                    .total_latency_ms
+                    .fetch_add(latency_ms, Ordering::Relaxed);
                 self.metrics.message_count.fetch_add(1, Ordering::Relaxed);
-                
+
                 return Ok((sender, message.payload));
             }
 
             // Wait for notification of new messages
             self.message_notify.notified().await;
-            
+
             // Small delay to prevent tight loop
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
@@ -284,13 +298,17 @@ impl MessageQueue {
     pub async fn try_receive(&self) -> Result<Option<(String, IpcMessage)>> {
         // Check broadcast messages first
         if let Ok(broadcast_msg) = self.try_receive_broadcast() {
-            self.metrics.messages_received.fetch_add(1, Ordering::Relaxed);
+            self.metrics
+                .messages_received
+                .fetch_add(1, Ordering::Relaxed);
             return Ok(Some((broadcast_msg.sender, broadcast_msg.payload)));
         }
 
         // Check worker queues
         if let Some((sender, message)) = self.try_receive_from_workers().await? {
-            self.metrics.messages_received.fetch_add(1, Ordering::Relaxed);
+            self.metrics
+                .messages_received
+                .fetch_add(1, Ordering::Relaxed);
             return Ok(Some((sender, message.payload)));
         }
 
@@ -300,14 +318,14 @@ impl MessageQueue {
     /// Get current queue depth for a worker
     pub async fn get_queue_depth(&self) -> Result<u32> {
         let mut total_depth = 0u32;
-        
+
         for entry in self.worker_queues.iter() {
             let worker_queue = entry.value();
             total_depth += worker_queue.high_priority.0.len() as u32;
             total_depth += worker_queue.normal_priority.0.len() as u32;
             total_depth += worker_queue.low_priority.0.len() as u32;
         }
-        
+
         Ok(total_depth)
     }
 
@@ -333,7 +351,7 @@ impl MessageQueue {
         let current_time = current_timestamp_ms();
         let last_check = self.metrics.last_throughput_check.load(Ordering::Relaxed);
         let time_diff_ms = current_time - last_check;
-        
+
         let throughput_msgs_per_sec = if time_diff_ms > 0 {
             let throughput_count = self.metrics.throughput_counter.load(Ordering::Relaxed);
             (throughput_count as f64) / (time_diff_ms as f64 / 1000.0)
@@ -342,8 +360,11 @@ impl MessageQueue {
         };
 
         // Update throughput tracking
-        if time_diff_ms > 5000 { // Reset every 5 seconds
-            self.metrics.last_throughput_check.store(current_time, Ordering::Relaxed);
+        if time_diff_ms > 5000 {
+            // Reset every 5 seconds
+            self.metrics
+                .last_throughput_check
+                .store(current_time, Ordering::Relaxed);
             self.metrics.throughput_counter.store(0, Ordering::Relaxed);
         }
 
@@ -352,9 +373,9 @@ impl MessageQueue {
         for entry in self.worker_queues.iter() {
             let worker_id = entry.key().clone();
             let worker_queue = entry.value();
-            let depth = worker_queue.high_priority.0.len() + 
-                       worker_queue.normal_priority.0.len() + 
-                       worker_queue.low_priority.0.len();
+            let depth = worker_queue.high_priority.0.len()
+                + worker_queue.normal_priority.0.len()
+                + worker_queue.low_priority.0.len();
             queue_depths.insert(worker_id, depth as u32);
         }
 
@@ -390,15 +411,17 @@ impl MessageQueue {
 
     /// Cleanup expired messages
     pub async fn cleanup_expired_messages(&self) -> Result<u32> {
-        let mut cleaned_count = 0u32;
+        let cleaned_count = 0u32;
         let current_time = current_timestamp_ms();
 
         for entry in self.worker_queues.iter() {
             let worker_queue = entry.value();
-            
+
             // This is a simplified cleanup - in production, we'd need more sophisticated expiry handling
             // For now, just update the last activity timestamp
-            worker_queue.last_activity.store(current_time, Ordering::Relaxed);
+            worker_queue
+                .last_activity
+                .store(current_time, Ordering::Relaxed);
         }
 
         if cleaned_count > 0 {
@@ -412,7 +435,9 @@ impl MessageQueue {
 
     /// Send message to worker queue based on priority
     async fn send_message_internal(&self, worker_id: &str, message: QueueMessage) -> Result<()> {
-        let worker_queue = self.worker_queues.get(worker_id)
+        let worker_queue = self
+            .worker_queues
+            .get(worker_id)
             .ok_or_else(|| PipelineError::Ipc(format!("Worker {} not found", worker_id)))?;
 
         let sender = match message.priority {
@@ -424,20 +449,34 @@ impl MessageQueue {
         match sender.try_send(message) {
             Ok(_) => {
                 self.metrics.messages_sent.fetch_add(1, Ordering::Relaxed);
-                self.metrics.throughput_counter.fetch_add(1, Ordering::Relaxed);
-                worker_queue.last_activity.store(current_timestamp_ms(), Ordering::Relaxed);
+                self.metrics
+                    .throughput_counter
+                    .fetch_add(1, Ordering::Relaxed);
+                worker_queue
+                    .last_activity
+                    .store(current_timestamp_ms(), Ordering::Relaxed);
                 self.message_notify.notify_waiters();
-                
+
                 tracing::debug!("Message sent to worker: {}", worker_id);
                 Ok(())
             }
             Err(TrySendError::Full(_)) => {
-                self.metrics.messages_dropped.fetch_add(1, Ordering::Relaxed);
-                Err(PipelineError::Ipc(format!("Worker {} queue is full", worker_id)))
+                self.metrics
+                    .messages_dropped
+                    .fetch_add(1, Ordering::Relaxed);
+                Err(PipelineError::Ipc(format!(
+                    "Worker {} queue is full",
+                    worker_id
+                )))
             }
             Err(TrySendError::Disconnected(_)) => {
-                self.metrics.messages_dropped.fetch_add(1, Ordering::Relaxed);
-                Err(PipelineError::Ipc(format!("Worker {} is disconnected", worker_id)))
+                self.metrics
+                    .messages_dropped
+                    .fetch_add(1, Ordering::Relaxed);
+                Err(PipelineError::Ipc(format!(
+                    "Worker {} is disconnected",
+                    worker_id
+                )))
             }
         }
     }
@@ -454,7 +493,7 @@ impl MessageQueue {
         for entry in self.worker_queues.iter() {
             let worker_id = entry.key().clone();
             let worker_queue = entry.value();
-            
+
             if let Ok(message) = worker_queue.high_priority.1.try_recv() {
                 return Ok(Some((worker_id, message)));
             }
@@ -464,7 +503,7 @@ impl MessageQueue {
         for entry in self.worker_queues.iter() {
             let worker_id = entry.key().clone();
             let worker_queue = entry.value();
-            
+
             if let Ok(message) = worker_queue.normal_priority.1.try_recv() {
                 return Ok(Some((worker_id, message)));
             }
@@ -474,7 +513,7 @@ impl MessageQueue {
         for entry in self.worker_queues.iter() {
             let worker_id = entry.key().clone();
             let worker_queue = entry.value();
-            
+
             if let Ok(message) = worker_queue.low_priority.1.try_recv() {
                 return Ok(Some((worker_id, message)));
             }
@@ -519,7 +558,7 @@ fn current_timestamp_ms() -> u64 {
 mod tests {
     use super::*;
     use crate::ipc::IpcMessage;
-    use std::time::Duration;
+    
 
     #[tokio::test]
     async fn test_message_queue_basic_operations() {
@@ -532,11 +571,13 @@ mod tests {
             status: crate::ipc::WorkerStatus::Ready,
             metrics: crate::ipc::WorkerMetrics::default(),
         };
-        mq.send_to_worker("worker-1", message.clone()).await.unwrap();
+        mq.send_to_worker("worker-1", message.clone())
+            .await
+            .unwrap();
 
         let (sender, received_message) = mq.receive().await.unwrap();
         assert_eq!(sender, "worker-1");
-        
+
         if let IpcMessage::WorkerHeartbeat { worker_id, .. } = received_message {
             assert_eq!(worker_id, "worker-1");
         } else {
@@ -548,7 +589,7 @@ mod tests {
     async fn test_priority_message_ordering() {
         let mq = MessageQueue::new().await.unwrap();
         mq.register_worker("worker-1".to_string()).await.unwrap();
-        
+
         let low_prio = IpcMessage::WorkerHeartbeat {
             worker_id: "worker-1".to_string(),
             timestamp: 1,
@@ -574,12 +615,21 @@ mod tests {
                 model_preference: None,
             },
         };
-        let high_prio = IpcMessage::Error { code: 500, message: "Test error".to_string() };
-        
+        let high_prio = IpcMessage::Error {
+            code: 500,
+            message: "Test error".to_string(),
+        };
+
         // Send in reverse priority order
-        mq.send_priority_message("worker-1", low_prio, MessagePriority::Low).await.unwrap();
-        mq.send_priority_message("worker-1", normal_prio, MessagePriority::Normal).await.unwrap();
-        mq.send_priority_message("worker-1", high_prio, MessagePriority::High).await.unwrap();
+        mq.send_priority_message("worker-1", low_prio, MessagePriority::Low)
+            .await
+            .unwrap();
+        mq.send_priority_message("worker-1", normal_prio, MessagePriority::Normal)
+            .await
+            .unwrap();
+        mq.send_priority_message("worker-1", high_prio, MessagePriority::High)
+            .await
+            .unwrap();
 
         // Receive should be in priority order
         let (_, msg1) = mq.receive().await.unwrap();
@@ -603,7 +653,7 @@ mod tests {
         // Both workers should receive the broadcast
         let (sender1, received1) = mq.receive().await.unwrap();
         let (sender2, received2) = mq.receive().await.unwrap();
-        
+
         assert_eq!(sender1, "broadcast");
         assert_eq!(sender2, "broadcast");
         assert!(matches!(received1, IpcMessage::SystemShutdown));

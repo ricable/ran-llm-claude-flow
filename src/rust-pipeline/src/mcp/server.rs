@@ -5,8 +5,8 @@ Model Context Protocol server for coordinating Rust-Python pipeline operations.
 Provides WebSocket-based communication with load balancing and fault tolerance.
 */
 
-use crate::mcp::{McpMessage, McpError, McpConnection, ClientType};
-use crate::{Result, PipelineError};
+use crate::mcp::{ClientType, McpConnection, McpError, McpMessage};
+use crate::{PipelineError, Result};
 use futures::future::join_all;
 use futures::{SinkExt, StreamExt};
 use parking_lot::RwLock;
@@ -19,8 +19,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::{interval, Duration};
-use tokio_tungstenite::{accept_async, tungstenite::Message, WebSocketStream};
-use tracing::{error, info, warn, debug};
+use tokio_tungstenite::{accept_async, tungstenite::Message};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 /// MCP server configuration
@@ -86,7 +86,11 @@ pub struct McpServer {
 /// Message handler trait for processing MCP messages
 #[async_trait::async_trait]
 pub trait MessageHandler {
-    async fn handle_message(&self, connection_id: Uuid, message: McpMessage) -> Result<Option<McpMessage>>;
+    async fn handle_message(
+        &self,
+        connection_id: Uuid,
+        message: McpMessage,
+    ) -> Result<Option<McpMessage>>;
     async fn handle_connection_established(&self, connection: &McpConnection) -> Result<()>;
     async fn handle_connection_closed(&self, connection_id: Uuid) -> Result<()>;
 }
@@ -182,7 +186,10 @@ impl McpServer {
             match listener.accept().await {
                 Ok((stream, peer_addr)) => {
                     if self.connections.read().len() >= self.config.max_connections {
-                        warn!("Connection limit reached, rejecting connection from {}", peer_addr);
+                        warn!(
+                            "Connection limit reached, rejecting connection from {}",
+                            peer_addr
+                        );
                         continue;
                     }
 
@@ -201,7 +208,9 @@ impl McpServer {
                             config,
                             message_handler,
                             is_running,
-                        ).await {
+                        )
+                        .await
+                        {
                             error!("Connection error: {}", e);
                         }
                     });
@@ -222,9 +231,7 @@ impl McpServer {
         self.is_running.store(false, Ordering::Relaxed);
 
         // Close all active connections
-        let connection_ids: Vec<Uuid> = {
-            self.connections.read().keys().copied().collect()
-        };
+        let connection_ids: Vec<Uuid> = { self.connections.read().keys().copied().collect() };
 
         for connection_id in connection_ids {
             self.close_connection(connection_id).await?;
@@ -237,7 +244,8 @@ impl McpServer {
     /// Send message to specific connection
     pub async fn send_to_connection(&self, connection_id: Uuid, message: McpMessage) -> Result<()> {
         let connection_state = {
-            self.connections.read()
+            self.connections
+                .read()
                 .get(&connection_id)
                 .map(|cs| cs.sender.clone())
         };
@@ -246,13 +254,17 @@ impl McpServer {
             let message_json = serde_json::to_string(&message)
                 .map_err(|e| PipelineError::Mcp(format!("Failed to serialize message: {}", e)))?;
 
-            sender.send(Message::Text(message_json))
+            sender
+                .send(Message::Text(message_json))
                 .map_err(|e| PipelineError::Mcp(format!("Failed to send message: {}", e)))?;
 
             debug!("Sent message to connection {}", connection_id);
             Ok(())
         } else {
-            Err(PipelineError::Mcp(format!("Connection {} not found", connection_id)))
+            Err(PipelineError::Mcp(format!(
+                "Connection {} not found",
+                connection_id
+            )))
         }
     }
 
@@ -264,7 +276,11 @@ impl McpServer {
     }
 
     /// Broadcast message to connections of specific type
-    pub async fn broadcast_to_type(&self, client_type: ClientType, message: McpMessage) -> Result<()> {
+    pub async fn broadcast_to_type(
+        &self,
+        client_type: ClientType,
+        message: McpMessage,
+    ) -> Result<()> {
         let connections = self.connections.read();
         let target_connections: Vec<mpsc::UnboundedSender<Message>> = connections
             .values()
@@ -293,7 +309,8 @@ impl McpServer {
 
     /// Get active connections
     pub async fn get_connections(&self) -> Vec<McpConnection> {
-        self.connections.read()
+        self.connections
+            .read()
             .values()
             .filter(|cs| cs.is_active.load(Ordering::Relaxed))
             .map(|cs| cs.connection.clone())
@@ -303,7 +320,8 @@ impl McpServer {
     /// Get server statistics
     pub async fn get_stats(&self) -> ServerStats {
         let connections = self.connections.read();
-        let active_connections = connections.values()
+        let active_connections = connections
+            .values()
             .filter(|cs| cs.is_active.load(Ordering::Relaxed))
             .count();
 
@@ -329,10 +347,13 @@ impl McpServer {
     /// Close a specific connection
     async fn close_connection(&self, connection_id: Uuid) -> Result<()> {
         let connection_state = self.connections.write().remove(&connection_id);
-        
+
         if let Some(cs) = connection_state {
             cs.is_active.store(false, Ordering::Relaxed);
-            let _ = self.message_handler.handle_connection_closed(connection_id).await;
+            let _ = self
+                .message_handler
+                .handle_connection_closed(connection_id)
+                .await;
             info!("Closed connection: {}", connection_id);
         }
 
@@ -344,12 +365,13 @@ impl McpServer {
         stream: TcpStream,
         peer_addr: SocketAddr,
         connections: Arc<RwLock<HashMap<Uuid, ConnectionState>>>,
-        mut broadcast_receiver: broadcast::Sender<McpMessage>,
+        broadcast_receiver: broadcast::Sender<McpMessage>,
         config: McpServerConfig,
         message_handler: Arc<dyn MessageHandler + Send + Sync>,
         is_running: Arc<AtomicBool>,
     ) -> Result<()> {
-        let ws_stream = accept_async(stream).await
+        let ws_stream = accept_async(stream)
+            .await
             .map_err(|e| PipelineError::Mcp(format!("WebSocket handshake failed: {}", e)))?;
 
         let connection_id = Uuid::new_v4();
@@ -360,7 +382,10 @@ impl McpServer {
             last_heartbeat: chrono::Utc::now(),
         };
 
-        info!("New WebSocket connection: {} from {}", connection_id, peer_addr);
+        info!(
+            "New WebSocket connection: {} from {}",
+            connection_id, peer_addr
+        );
 
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
         let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
@@ -377,7 +402,9 @@ impl McpServer {
         connections.write().insert(connection_id, connection_state);
 
         // Notify handler of new connection
-        let _ = message_handler.handle_connection_established(&connection).await;
+        let _ = message_handler
+            .handle_connection_established(&connection)
+            .await;
 
         // Spawn task to handle outgoing messages
         let connections_clone = connections.clone();
@@ -392,7 +419,8 @@ impl McpServer {
 
         // Spawn task to handle broadcast messages
         let tx_clone = {
-            connections.read()
+            connections
+                .read()
                 .get(&connection_id)
                 .map(|cs| cs.sender.clone())
         };
@@ -419,7 +447,9 @@ impl McpServer {
                         message,
                         &connections,
                         &message_handler,
-                    ).await {
+                    )
+                    .await
+                    {
                         error!("Error processing message: {}", e);
                     }
                 }
@@ -445,7 +475,9 @@ impl McpServer {
         }
 
         connections.write().remove(&connection_id);
-        let _ = message_handler.handle_connection_closed(connection_id).await;
+        let _ = message_handler
+            .handle_connection_closed(connection_id)
+            .await;
 
         info!("Connection {} closed", connection_id);
         Ok(())
@@ -460,10 +492,9 @@ impl McpServer {
     ) -> Result<()> {
         let text = match message {
             Message::Text(text) => text,
-            Message::Binary(data) => {
-                String::from_utf8(data)
-                    .map_err(|e| PipelineError::Mcp(format!("Invalid UTF-8 in binary message: {}", e)))?
-            }
+            Message::Binary(data) => String::from_utf8(data).map_err(|e| {
+                PipelineError::Mcp(format!("Invalid UTF-8 in binary message: {}", e))
+            })?,
             Message::Ping(data) => {
                 // Send pong response
                 if let Some(cs) = connections.read().get(&connection_id) {
@@ -474,7 +505,8 @@ impl McpServer {
             Message::Pong(_) => {
                 // Update heartbeat
                 if let Some(cs) = connections.read().get(&connection_id) {
-                    cs.last_heartbeat.store(current_timestamp(), Ordering::Relaxed);
+                    cs.last_heartbeat
+                        .store(current_timestamp(), Ordering::Relaxed);
                 }
                 return Ok(());
             }
@@ -495,11 +527,15 @@ impl McpServer {
         // Update connection statistics
         if let Some(cs) = connections.read().get(&connection_id) {
             cs.message_count.fetch_add(1, Ordering::Relaxed);
-            cs.last_heartbeat.store(current_timestamp(), Ordering::Relaxed);
+            cs.last_heartbeat
+                .store(current_timestamp(), Ordering::Relaxed);
         }
 
         // Handle message
-        if let Ok(Some(response)) = message_handler.handle_message(connection_id, mcp_message).await {
+        if let Ok(Some(response)) = message_handler
+            .handle_message(connection_id, mcp_message)
+            .await
+        {
             let response_json = serde_json::to_string(&response)
                 .map_err(|e| PipelineError::Mcp(format!("Failed to serialize response: {}", e)))?;
 
@@ -563,7 +599,8 @@ impl McpServer {
                 interval.tick().await;
 
                 let connections_read = connections.read();
-                let active_count = connections_read.values()
+                let active_count = connections_read
+                    .values()
                     .filter(|cs| cs.is_active.load(Ordering::Relaxed))
                     .count();
 
@@ -577,17 +614,19 @@ impl McpServer {
 
 #[async_trait::async_trait]
 impl MessageHandler for DefaultMessageHandler {
-    async fn handle_message(&self, connection_id: Uuid, message: McpMessage) -> Result<Option<McpMessage>> {
+    async fn handle_message(
+        &self,
+        connection_id: Uuid,
+        message: McpMessage,
+    ) -> Result<Option<McpMessage>> {
         match message {
-            McpMessage::HealthCheck => {
-                Ok(Some(McpMessage::Success {
-                    request_id: Uuid::new_v4(),
-                    data: Some(serde_json::json!({
-                        "status": "healthy",
-                        "timestamp": current_timestamp()
-                    })),
-                }))
-            }
+            McpMessage::HealthCheck => Ok(Some(McpMessage::Success {
+                request_id: Uuid::new_v4(),
+                data: Some(serde_json::json!({
+                    "status": "healthy",
+                    "timestamp": current_timestamp()
+                })),
+            })),
             McpMessage::PipelineStatus { pipeline_id } => {
                 let state = self.pipeline_state.read();
                 let status = if state.active_tasks.contains_key(&pipeline_id) {
@@ -646,7 +685,9 @@ impl MessageHandler for DefaultMessageHandler {
                 // Default handler for other message types
                 Ok(Some(McpMessage::Error {
                     request_id: Uuid::new_v4(),
-                    error: McpError::invalid_request("Message type not supported by default handler"),
+                    error: McpError::invalid_request(
+                        "Message type not supported by default handler",
+                    ),
                 }))
             }
         }
@@ -675,7 +716,7 @@ fn current_timestamp() -> u64 {
 pub async fn start(port: u16) -> Result<()> {
     let mut config = McpServerConfig::default();
     config.port = port;
-    
+
     let server = McpServer::with_config(config);
     server.start().await
 }

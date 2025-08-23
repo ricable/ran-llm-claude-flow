@@ -5,14 +5,14 @@ Real-time performance benchmarking and model switching optimization system.
 Continuously monitors and benchmarks model performance to improve selection accuracy.
 */
 
-use crate::ml::{MLRequest, MLResponse, Qwen3Model, DocumentType, Priority, ProcessingStatus};
-use crate::{Result, PipelineError};
+use crate::ml::{DocumentType, MLRequest, MLResponse, ProcessingStatus, Qwen3Model};
+use crate::{PipelineError, Result};
+use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use parking_lot::{Mutex, RwLock};
 use tracing::{debug, info, warn};
 
 /// Performance benchmark result
@@ -136,19 +136,23 @@ struct BenchmarkSample {
     timestamp: Instant,
 }
 
-static PERFORMANCE_BENCHMARK: std::sync::OnceLock<Arc<PerformanceBenchmark>> = std::sync::OnceLock::new();
+static PERFORMANCE_BENCHMARK: std::sync::OnceLock<Arc<PerformanceBenchmark>> =
+    std::sync::OnceLock::new();
 
 impl PerformanceBenchmark {
     /// Create new performance benchmark system
     pub fn new(config: BenchmarkConfig) -> Self {
         let mut model_warmup_state = HashMap::new();
         for model in Qwen3Model::all_models() {
-            model_warmup_state.insert(model, WarmupState {
-                samples_collected: 0,
-                is_warmed_up: false,
-                warmup_start_time: Instant::now(),
-                average_warmup_time: Duration::from_secs(0),
-            });
+            model_warmup_state.insert(
+                model,
+                WarmupState {
+                    samples_collected: 0,
+                    is_warmed_up: false,
+                    warmup_start_time: Instant::now(),
+                    average_warmup_time: Duration::from_secs(0),
+                },
+            );
         }
 
         Self {
@@ -170,13 +174,18 @@ impl PerformanceBenchmark {
             return Ok(());
         }
 
-        let benchmark_key = self.generate_benchmark_key(&response.model_used, &request.document_type);
-        
-        debug!("Recording benchmark result for {} on {}", 
-               response.model_used.name(), request.document_type as u8);
+        let benchmark_key =
+            self.generate_benchmark_key(&response.model_used, &request.document_type);
+
+        debug!(
+            "Recording benchmark result for {} on {}",
+            response.model_used.name(),
+            request.document_type as u8
+        );
 
         // Update warmup state
-        self.update_warmup_state(&response.model_used, response).await;
+        self.update_warmup_state(&response.model_used, response)
+            .await;
 
         // Create benchmark sample
         let sample = BenchmarkSample {
@@ -196,7 +205,9 @@ impl PerformanceBenchmark {
         }
 
         // Calculate resource utilization (simulated for now)
-        let resource_utilization = self.calculate_resource_utilization(&response.model_used).await;
+        let resource_utilization = self
+            .calculate_resource_utilization(&response.model_used)
+            .await;
 
         // Create benchmark result
         let benchmark_result = BenchmarkResult {
@@ -205,16 +216,26 @@ impl PerformanceBenchmark {
             throughput_docs_per_hour: self.calculate_throughput(response.processing_time),
             average_latency: response.processing_time,
             quality_score: response.quality_score,
-            memory_efficiency: response.quality_score * 1000.0 / (response.memory_used_mb as f64).max(1.0),
-            success_rate: if matches!(response.status, ProcessingStatus::Success) { 1.0 } else { 0.0 },
+            memory_efficiency: response.quality_score * 1000.0
+                / (response.memory_used_mb as f64).max(1.0),
+            success_rate: if matches!(response.status, ProcessingStatus::Success) {
+                1.0
+            } else {
+                0.0
+            },
             resource_utilization,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
         };
 
         // Store benchmark result
         {
             let mut results = self.benchmark_results.write();
-            let entry = results.entry(benchmark_key.clone()).or_insert_with(Vec::new);
+            let entry = results
+                .entry(benchmark_key.clone())
+                .or_insert_with(Vec::new);
             entry.push(benchmark_result);
 
             // Limit history size
@@ -228,7 +249,8 @@ impl PerformanceBenchmark {
 
         // Check for automatic model switching opportunity
         if self.config.read().automatic_switching {
-            self.evaluate_switching_opportunity(&request.document_type).await?;
+            self.evaluate_switching_opportunity(&request.document_type)
+                .await?;
         }
 
         self.total_benchmarks.fetch_add(1, Ordering::Relaxed);
@@ -236,10 +258,14 @@ impl PerformanceBenchmark {
     }
 
     /// Start continuous benchmarking for a model
-    pub async fn start_benchmark(&self, model: Qwen3Model, document_type: DocumentType) -> Result<String> {
+    pub async fn start_benchmark(
+        &self,
+        model: Qwen3Model,
+        document_type: DocumentType,
+    ) -> Result<String> {
         let benchmark_key = self.generate_benchmark_key(&model, &document_type);
         let config = self.config.read();
-        
+
         let benchmark = ActiveBenchmark {
             model: model.clone(),
             start_time: Instant::now(),
@@ -252,7 +278,11 @@ impl PerformanceBenchmark {
             active.insert(benchmark_key.clone(), benchmark);
         }
 
-        info!("Started benchmark for {} on {:?}", model.name(), document_type);
+        info!(
+            "Started benchmark for {} on {:?}",
+            model.name(),
+            document_type
+        );
         Ok(benchmark_key)
     }
 
@@ -260,26 +290,44 @@ impl PerformanceBenchmark {
     pub async fn complete_benchmark(&self, benchmark_key: &str) -> Result<BenchmarkResult> {
         let benchmark = {
             let mut active = self.active_benchmarks.lock();
-            active.remove(benchmark_key)
-                .ok_or_else(|| PipelineError::Optimization(format!("No active benchmark: {}", benchmark_key)))?
+            active.remove(benchmark_key).ok_or_else(|| {
+                PipelineError::Optimization(format!("No active benchmark: {}", benchmark_key))
+            })?
         };
 
         if benchmark.samples.is_empty() {
-            return Err(PipelineError::Optimization("No samples collected for benchmark".to_string()));
+            return Err(PipelineError::Optimization(
+                "No samples collected for benchmark".to_string(),
+            ));
         }
 
         // Analyze collected samples
         let total_samples = benchmark.samples.len() as f64;
         let successful_samples = benchmark.samples.iter().filter(|s| s.success).count() as f64;
-        
+
         let average_latency = Duration::from_nanos(
-            (benchmark.samples.iter().map(|s| s.latency.as_nanos()).sum::<u128>() / benchmark.samples.len() as u128) as u64
+            (benchmark
+                .samples
+                .iter()
+                .map(|s| s.latency.as_nanos())
+                .sum::<u128>()
+                / benchmark.samples.len() as u128) as u64,
         );
-        
-        let average_quality = benchmark.samples.iter().map(|s| s.quality_score).sum::<f64>() / total_samples;
-        let average_memory = benchmark.samples.iter().map(|s| s.memory_used_gb).sum::<f64>() / total_samples;
+
+        let average_quality = benchmark
+            .samples
+            .iter()
+            .map(|s| s.quality_score)
+            .sum::<f64>()
+            / total_samples;
+        let average_memory = benchmark
+            .samples
+            .iter()
+            .map(|s| s.memory_used_gb)
+            .sum::<f64>()
+            / total_samples;
         let success_rate = successful_samples / total_samples;
-        
+
         let throughput = self.calculate_throughput(average_latency);
         let memory_efficiency = average_quality * 1000.0 / (average_memory * 1024.0).max(1.0);
         let resource_utilization = self.calculate_resource_utilization(&benchmark.model).await;
@@ -293,38 +341,53 @@ impl PerformanceBenchmark {
             memory_efficiency,
             success_rate,
             resource_utilization,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
         };
 
-        info!("Completed benchmark: {} docs/hour, {:.3} quality, {:.1}% success rate", 
-              result.throughput_docs_per_hour, result.quality_score, result.success_rate * 100.0);
+        info!(
+            "Completed benchmark: {} docs/hour, {:.3} quality, {:.1}% success rate",
+            result.throughput_docs_per_hour,
+            result.quality_score,
+            result.success_rate * 100.0
+        );
 
         Ok(result)
     }
 
     /// Get current performance metrics for model
-    pub async fn get_performance_metrics(&self, model: &Qwen3Model, document_type: &DocumentType) -> Result<Option<BenchmarkResult>> {
+    pub async fn get_performance_metrics(
+        &self,
+        model: &Qwen3Model,
+        document_type: &DocumentType,
+    ) -> Result<Option<BenchmarkResult>> {
         let benchmark_key = self.generate_benchmark_key(model, document_type);
         let results = self.benchmark_results.read();
-        
+
         if let Some(results_list) = results.get(&benchmark_key) {
             if let Some(latest) = results_list.last() {
                 return Ok(Some(latest.clone()));
             }
         }
-        
+
         Ok(None)
     }
 
     /// Compare model performance
-    pub async fn compare_models(&self, models: &[Qwen3Model], document_type: &DocumentType) -> Result<Vec<ModelComparison>> {
+    pub async fn compare_models(
+        &self,
+        models: &[Qwen3Model],
+        document_type: &DocumentType,
+    ) -> Result<Vec<ModelComparison>> {
         let mut comparisons = Vec::new();
-        
+
         for model in models {
             if let Some(metrics) = self.get_performance_metrics(model, document_type).await? {
                 // Calculate composite performance score
                 let performance_score = self.calculate_composite_score(&metrics);
-                
+
                 comparisons.push(ModelComparison {
                     model: model.clone(),
                     performance_score,
@@ -334,17 +397,21 @@ impl PerformanceBenchmark {
         }
 
         // Sort by performance score
-        comparisons.sort_by(|a, b| b.performance_score.partial_cmp(&a.performance_score).unwrap());
-        
+        comparisons.sort_by(|a, b| {
+            b.performance_score
+                .partial_cmp(&a.performance_score)
+                .unwrap()
+        });
+
         Ok(comparisons)
     }
 
     /// Record model switch event
     pub async fn record_model_switch(
-        &self, 
-        from_model: Option<Qwen3Model>, 
-        to_model: Qwen3Model, 
-        reason: String
+        &self,
+        from_model: Option<Qwen3Model>,
+        to_model: Qwen3Model,
+        reason: String,
     ) -> Result<()> {
         let switching_time = {
             let mut last_switch = self.last_switch_time.lock();
@@ -358,7 +425,9 @@ impl PerformanceBenchmark {
             switching_time
         };
 
-        let performance_impact = self.calculate_switching_impact(&from_model, &to_model).await;
+        let performance_impact = self
+            .calculate_switching_impact(&from_model, &to_model)
+            .await;
 
         let switch_event = ModelSwitchEvent {
             from_model: from_model.clone(),
@@ -366,13 +435,16 @@ impl PerformanceBenchmark {
             switching_time,
             reason: reason.clone(),
             performance_impact,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
         };
 
         {
             let mut history = self.switching_history.write();
             history.push(switch_event);
-            
+
             // Limit history size
             if history.len() > 500 {
                 history.drain(0..50); // Remove oldest 50 entries
@@ -380,10 +452,14 @@ impl PerformanceBenchmark {
         }
 
         self.total_switches.fetch_add(1, Ordering::Relaxed);
-        
-        info!("Recorded model switch from {:?} to {} - Reason: {}", 
-              from_model.as_ref().map(|m| m.name()), to_model.name(), reason);
-        
+
+        info!(
+            "Recorded model switch from {:?} to {} - Reason: {}",
+            from_model.as_ref().map(|m| m.name()),
+            to_model.name(),
+            reason
+        );
+
         Ok(())
     }
 
@@ -396,10 +472,12 @@ impl PerformanceBenchmark {
         let cutoff_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs() - config.trend_analysis_window.as_secs();
+            .as_secs()
+            - config.trend_analysis_window.as_secs();
 
         for (key, result_list) in results.iter() {
-            let recent_results: Vec<_> = result_list.iter()
+            let recent_results: Vec<_> = result_list
+                .iter()
                 .filter(|r| r.timestamp > cutoff_time)
                 .collect();
 
@@ -418,17 +496,20 @@ impl PerformanceBenchmark {
     pub async fn get_switching_stats(&self) -> Result<SwitchingStats> {
         let history = self.switching_history.read();
         let total_switches = self.total_switches.load(Ordering::Relaxed);
-        
+
         let mut model_switch_counts = HashMap::new();
         let mut reasons = HashMap::new();
         let mut average_switching_time = Duration::from_secs(0);
 
         if !history.is_empty() {
             let total_time: u128 = history.iter().map(|s| s.switching_time.as_nanos()).sum();
-            average_switching_time = Duration::from_nanos((total_time / history.len() as u128) as u64);
+            average_switching_time =
+                Duration::from_nanos((total_time / history.len() as u128) as u64);
 
             for switch in history.iter() {
-                *model_switch_counts.entry(switch.to_model.clone()).or_insert(0u64) += 1;
+                *model_switch_counts
+                    .entry(switch.to_model.clone())
+                    .or_insert(0u64) += 1;
                 *reasons.entry(switch.reason.clone()).or_insert(0u64) += 1;
             }
         }
@@ -458,8 +539,12 @@ impl PerformanceBenchmark {
                 if state.samples_collected >= self.config.read().warmup_samples {
                     state.is_warmed_up = true;
                     state.average_warmup_time = state.warmup_start_time.elapsed();
-                    debug!("Model {} warmed up after {} samples in {:?}", 
-                           model.name(), state.samples_collected, state.average_warmup_time);
+                    debug!(
+                        "Model {} warmed up after {} samples in {:?}",
+                        model.name(),
+                        state.samples_collected,
+                        state.average_warmup_time
+                    );
                 }
             }
         }
@@ -478,7 +563,7 @@ impl PerformanceBenchmark {
     async fn calculate_resource_utilization(&self, model: &Qwen3Model) -> ResourceUtilization {
         // In a real implementation, this would query actual system metrics
         let specs = model.specs();
-        
+
         ResourceUtilization {
             cpu_usage_percent: match model {
                 Qwen3Model::Qwen3_1_7B => 25.0,
@@ -508,23 +593,27 @@ impl PerformanceBenchmark {
     async fn update_performance_trends(&self, benchmark_key: &str) -> Result<()> {
         let config = self.config.read();
         let results = self.benchmark_results.read();
-        
+
         if let Some(result_list) = results.get(benchmark_key) {
             let cutoff_time = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_secs() - config.trend_analysis_window.as_secs();
+                .as_secs()
+                - config.trend_analysis_window.as_secs();
 
-            let recent_results: Vec<_> = result_list.iter()
+            let recent_results: Vec<_> = result_list
+                .iter()
                 .filter(|r| r.timestamp > cutoff_time)
                 .collect();
 
             if recent_results.len() >= config.min_samples_for_trend as usize {
                 let trend = self.calculate_trend(&recent_results);
-                self.performance_trends.write().insert(benchmark_key.to_string(), trend);
+                self.performance_trends
+                    .write()
+                    .insert(benchmark_key.to_string(), trend);
             }
         }
-        
+
         Ok(())
     }
 
@@ -534,21 +623,33 @@ impl PerformanceBenchmark {
         let n = results.len() as f64;
         let sum_x: f64 = results.iter().enumerate().map(|(i, _)| i as f64).sum();
         let sum_y: f64 = results.iter().map(|r| r.quality_score).sum();
-        let sum_xy: f64 = results.iter().enumerate().map(|(i, r)| i as f64 * r.quality_score).sum();
-        let sum_x2: f64 = results.iter().enumerate().map(|(i, _)| (i*i) as f64).sum();
+        let sum_xy: f64 = results
+            .iter()
+            .enumerate()
+            .map(|(i, r)| i as f64 * r.quality_score)
+            .sum();
+        let sum_x2: f64 = results
+            .iter()
+            .enumerate()
+            .map(|(i, _)| (i * i) as f64)
+            .sum();
 
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
 
-        let trend_direction = if slope > 0.01 { TrendDirection::Improving }
-                              else if slope < -0.01 { TrendDirection::Declining }
-                              else { TrendDirection::Stable };
+        let trend_direction = if slope > 0.01 {
+            TrendDirection::Improving
+        } else if slope < -0.01 {
+            TrendDirection::Declining
+        } else {
+            TrendDirection::Stable
+        };
 
         PerformanceTrend {
             model: results[0].model.clone(),
             document_type: results[0].document_type.clone(),
             trend_direction,
             trend_magnitude: slope,
-            confidence: 1.0, // Simplified
+            confidence: 1.0,          // Simplified
             prediction_accuracy: 0.0, // Simplified
             sample_count: n as u64,
         }
@@ -562,7 +663,10 @@ impl PerformanceBenchmark {
         let reliability_score = metrics.success_rate;
 
         // Weighted average
-        (throughput_score * 0.3 + quality_score * 0.4 + efficiency_score * 0.2 + reliability_score * 0.1)
+        throughput_score * 0.3
+            + quality_score * 0.4
+            + efficiency_score * 0.2
+            + reliability_score * 0.1
     }
 
     /// Evaluate model switching opportunity
@@ -577,7 +681,9 @@ impl PerformanceBenchmark {
         let best_model = &comparisons[0].model;
         let current_model = Qwen3Model::Qwen3_7B; // Simplified: get current model from state
 
-        if best_model != &current_model && comparisons[0].performance_score > self.config.read().performance_threshold {
+        if best_model != &current_model
+            && comparisons[0].performance_score > self.config.read().performance_threshold
+        {
             // Check switching frequency
             let can_switch = {
                 let last_switch = self.last_switch_time.lock();
@@ -589,14 +695,19 @@ impl PerformanceBenchmark {
             };
 
             if can_switch {
-                info!("Switching from {} to {} for document type {:?}", 
-                      current_model.name(), best_model.name(), document_type);
-                
+                info!(
+                    "Switching from {} to {} for document type {:?}",
+                    current_model.name(),
+                    best_model.name(),
+                    document_type
+                );
+
                 self.record_model_switch(
-                    Some(current_model), 
-                    best_model.clone(), 
-                    "Automatic performance optimization".to_string()
-                ).await?;
+                    Some(current_model),
+                    best_model.clone(),
+                    "Automatic performance optimization".to_string(),
+                )
+                .await?;
             }
         }
 
@@ -604,19 +715,32 @@ impl PerformanceBenchmark {
     }
 
     /// Calculate performance impact of a model switch
-    async fn calculate_switching_impact(&self, from_model: &Option<Qwen3Model>, to_model: &Qwen3Model) -> f64 {
+    async fn calculate_switching_impact(
+        &self,
+        from_model: &Option<Qwen3Model>,
+        to_model: &Qwen3Model,
+    ) -> f64 {
         let doc_type = DocumentType::PlainText; // Simplified
-        
+
         let from_score = if let Some(from) = from_model {
-            self.get_performance_metrics(from, &doc_type).await.ok().flatten()
-                .map(|m| self.calculate_composite_score(&m)).unwrap_or(0.0)
+            self.get_performance_metrics(from, &doc_type)
+                .await
+                .ok()
+                .flatten()
+                .map(|m| self.calculate_composite_score(&m))
+                .unwrap_or(0.0)
         } else {
             0.0
         };
 
-        let to_score = self.get_performance_metrics(to_model, &doc_type).await.ok().flatten()
-            .map(|m| self.calculate_composite_score(&m)).unwrap_or(0.0);
-        
+        let to_score = self
+            .get_performance_metrics(to_model, &doc_type)
+            .await
+            .ok()
+            .flatten()
+            .map(|m| self.calculate_composite_score(&m))
+            .unwrap_or(0.0);
+
         if from_score > 0.0 {
             (to_score - from_score) / from_score * 100.0
         } else {
@@ -647,13 +771,13 @@ pub struct SwitchingStats {
 pub async fn initialize() -> Result<()> {
     let config = BenchmarkConfig::default();
     let benchmark_system = Arc::new(PerformanceBenchmark::new(config));
-    
+
     if PERFORMANCE_BENCHMARK.set(benchmark_system).is_err() {
         warn!("Performance benchmark system already initialized");
     } else {
         info!("Performance benchmark system initialized");
     }
-    
+
     Ok(())
 }
 
@@ -662,25 +786,39 @@ pub async fn record_result(request: &MLRequest, response: &MLResponse) -> Result
     if let Some(benchmark) = PERFORMANCE_BENCHMARK.get() {
         benchmark.record_result(request, response).await
     } else {
-        Err(PipelineError::Initialization("Benchmark system not initialized".to_string()))
+        Err(PipelineError::Initialization(
+            "Benchmark system not initialized".to_string(),
+        ))
     }
 }
 
 /// Get model performance metrics
-pub async fn get_performance_metrics(model: &Qwen3Model, document_type: &DocumentType) -> Result<Option<BenchmarkResult>> {
+pub async fn get_performance_metrics(
+    model: &Qwen3Model,
+    document_type: &DocumentType,
+) -> Result<Option<BenchmarkResult>> {
     if let Some(benchmark) = PERFORMANCE_BENCHMARK.get() {
-        benchmark.get_performance_metrics(model, document_type).await
+        benchmark
+            .get_performance_metrics(model, document_type)
+            .await
     } else {
-        Err(PipelineError::Initialization("Benchmark system not initialized".to_string()))
+        Err(PipelineError::Initialization(
+            "Benchmark system not initialized".to_string(),
+        ))
     }
 }
 
 /// Compare model performances
-pub async fn compare_models(models: &[Qwen3Model], document_type: &DocumentType) -> Result<Vec<ModelComparison>> {
+pub async fn compare_models(
+    models: &[Qwen3Model],
+    document_type: &DocumentType,
+) -> Result<Vec<ModelComparison>> {
     if let Some(benchmark) = PERFORMANCE_BENCHMARK.get() {
         benchmark.compare_models(models, document_type).await
     } else {
-        Err(PipelineError::Initialization("Benchmark system not initialized".to_string()))
+        Err(PipelineError::Initialization(
+            "Benchmark system not initialized".to_string(),
+        ))
     }
 }
 
@@ -700,14 +838,14 @@ mod tests {
     #[tokio::test]
     async fn test_record_benchmark_result() {
         initialize().await.unwrap();
-        
+
         let model = Qwen3Model::Qwen3_1_7B;
         let request = MLRequest {
             request_id: uuid::Uuid::new_v4(),
             document_type: DocumentType::PlainText,
             document_size_bytes: 1024,
             complexity_score: 0.5,
-            priority: Priority::High,
+            priority: crate::ml::Priority::High,
             quality_requirements: crate::ml::QualityRequirements {
                 min_score: 0.7,
                 consistency_target: 0.8,
@@ -726,13 +864,15 @@ mod tests {
             status: ProcessingStatus::Success,
             error_message: None,
         };
-        
+
         let result = record_result(&request, &response).await;
         assert!(result.is_ok());
 
-        let metrics = get_performance_metrics(&model, &request.document_type).await.unwrap();
+        let metrics = get_performance_metrics(&model, &request.document_type)
+            .await
+            .unwrap();
         assert!(metrics.is_some());
-        
+
         let metrics = metrics.unwrap();
         assert_eq!(metrics.model, model);
         assert_eq!(metrics.quality_score, 0.9);

@@ -4,11 +4,11 @@
 MCP server, client, and host for coordinating Rust-Python pipeline operations.
 */
 
-pub mod server;
 pub mod client;
+pub mod error_handling;
 pub mod host;
 pub mod protocol;
-pub mod error_handling;
+pub mod server;
 
 #[cfg(test)]
 pub mod tests;
@@ -21,39 +21,86 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum McpMessage {
     // Pipeline control messages
-    PipelineStart { config: PipelineStartConfig },
-    PipelineStop { pipeline_id: Uuid },
-    PipelineStatus { pipeline_id: Uuid },
-    
-    // Task orchestration messages  
-    TaskSubmit { task: TaskDefinition },
-    TaskStatus { task_id: Uuid },
-    TaskResult { task_id: Uuid, result: TaskResult },
-    TaskCancel { task_id: Uuid },
-    
+    PipelineStart {
+        config: PipelineStartConfig,
+    },
+    PipelineStop {
+        pipeline_id: Uuid,
+    },
+    PipelineStatus {
+        pipeline_id: Uuid,
+    },
+
+    // Task orchestration messages
+    TaskSubmit {
+        task: TaskDefinition,
+    },
+    TaskStatus {
+        task_id: Uuid,
+    },
+    TaskResult {
+        task_id: Uuid,
+        result: TaskResult,
+    },
+    TaskCancel {
+        task_id: Uuid,
+    },
+
     // Model management messages
-    ModelLoad { model_id: String, variant: ModelVariant },
-    ModelUnload { model_id: String },
-    ModelSwitch { from_model: String, to_model: String },
-    ModelStatus { model_id: Option<String> },
-    
+    ModelLoad {
+        model_id: String,
+        variant: ModelVariant,
+    },
+    ModelUnload {
+        model_id: String,
+    },
+    ModelSwitch {
+        from_model: String,
+        to_model: String,
+    },
+    ModelStatus {
+        model_id: Option<String>,
+    },
+
     // Performance monitoring messages
-    MetricsRequest { component: Option<String> },
-    MetricsResponse { metrics: PerformanceMetrics },
-    AlertNotification { alert: Alert },
-    
+    MetricsRequest {
+        component: Option<String>,
+    },
+    MetricsResponse {
+        metrics: PerformanceMetrics,
+    },
+    AlertNotification {
+        alert: Alert,
+    },
+
     // IPC coordination messages
-    IpcRegister { process_id: String, capabilities: Vec<String> },
-    IpcMessage { from: String, to: String, payload: Vec<u8> },
-    IpcBroadcast { sender: String, payload: Vec<u8> },
-    
+    IpcRegister {
+        process_id: String,
+        capabilities: Vec<String>,
+    },
+    IpcMessage {
+        from: String,
+        to: String,
+        payload: Vec<u8>,
+    },
+    IpcBroadcast {
+        sender: String,
+        payload: Vec<u8>,
+    },
+
     // System control messages
     HealthCheck,
     SystemShutdown,
-    
+
     // Response messages
-    Success { request_id: Uuid, data: Option<serde_json::Value> },
-    Error { request_id: Uuid, error: McpError },
+    Success {
+        request_id: Uuid,
+        data: Option<serde_json::Value>,
+    },
+    Error {
+        request_id: Uuid,
+        error: McpError,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,9 +142,9 @@ pub struct ModelRequirements {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ModelSize {
-    Small,    // qwen3-1.7b
-    Medium,   // qwen3-7b
-    Large,    // qwen3-30b
+    Small,  // qwen3-1.7b
+    Medium, // qwen3-7b
+    Large,  // qwen3-30b
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -210,7 +257,7 @@ impl McpError {
             details: None,
         }
     }
-    
+
     pub fn not_found(message: &str) -> Self {
         Self {
             code: 404,
@@ -218,7 +265,7 @@ impl McpError {
             details: None,
         }
     }
-    
+
     pub fn internal_error(message: &str) -> Self {
         Self {
             code: 500,
@@ -226,7 +273,7 @@ impl McpError {
             details: None,
         }
     }
-    
+
     pub fn timeout_error(message: &str) -> Self {
         Self {
             code: 408,
@@ -234,7 +281,7 @@ impl McpError {
             details: None,
         }
     }
-    
+
     pub fn resource_exhausted(message: &str) -> Self {
         Self {
             code: 503,

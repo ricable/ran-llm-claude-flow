@@ -4,13 +4,12 @@
 High-performance document processing core optimized for M3 Max hardware.
 */
 
-pub mod pipeline_coordinator;
 pub mod document_processor;
-pub mod quality_validator;
 pub mod performance_monitor;
+pub mod pipeline_coordinator;
+pub mod quality_validator;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use uuid::Uuid;
 

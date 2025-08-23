@@ -4,7 +4,7 @@
 Core document processing functionality with M3 Max optimizations.
 */
 
-use crate::{Result, PipelineError};
+use crate::Result;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -58,9 +58,12 @@ impl DocumentProcessor {
     /// Process a document
     pub async fn process_document(&self, request: ProcessingRequest) -> Result<ProcessingResult> {
         let start_time = std::time::SystemTime::now();
-        
-        tracing::debug!("Processing document {} with format {:?}", 
-                       request.document_id, request.format);
+
+        tracing::debug!(
+            "Processing document {} with format {:?}",
+            request.document_id,
+            request.format
+        );
 
         // Simulate document processing
         let extracted_text = match request.format {
@@ -69,7 +72,8 @@ impl DocumentProcessor {
             _ => format!("Processed content from {:?} format", request.format),
         };
 
-        let processing_time = start_time.elapsed()
+        let processing_time = start_time
+            .elapsed()
             .unwrap_or(std::time::Duration::from_secs(0))
             .as_millis() as u64;
 

@@ -4,7 +4,7 @@
 Coordinates the overall document processing pipeline with M3 Max optimizations.
 */
 
-use crate::{Result, PipelineError, PipelineConfig};
+use crate::{PipelineConfig, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -58,7 +58,11 @@ impl PipelineCoordinator {
         let mut pipelines = self.active_pipelines.write().await;
         pipelines.insert(pipeline_id, instance);
 
-        tracing::info!("Started pipeline {} with {} documents", pipeline_id, document_count);
+        tracing::info!(
+            "Started pipeline {} with {} documents",
+            pipeline_id,
+            document_count
+        );
         Ok(pipeline_id)
     }
 
@@ -82,7 +86,7 @@ impl PipelineCoordinator {
 }
 
 /// Initialize pipeline coordinator
-pub async fn initialize(config: &PipelineConfig) -> Result<()> {
+pub async fn initialize(_config: &PipelineConfig) -> Result<()> {
     tracing::info!("Initializing pipeline coordinator");
     Ok(())
 }

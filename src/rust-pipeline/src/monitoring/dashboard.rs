@@ -1,11 +1,10 @@
+use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::interval;
 use warp::{Filter, Reply};
-use futures_util::{SinkExt, StreamExt};
-use tokio_tungstenite::{WebSocketStream, tungstenite::Message};
 
 /// M3 Max optimized performance metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,7 +137,7 @@ impl PerformanceDashboard {
             })),
             connected_clients: Arc::new(Mutex::new(Vec::new())),
         };
-        
+
         Self {
             metrics_collector: MetricsCollector::new(state.clone()),
             alert_system: AlertSystem::new(state.clone()),
@@ -146,28 +145,31 @@ impl PerformanceDashboard {
             state,
         }
     }
-    
+
     /// Start the performance monitoring dashboard
     pub async fn start(&self, port: u16) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🚀 Starting Performance Monitoring Dashboard on port {}", port);
-        
+        println!(
+            "🚀 Starting Performance Monitoring Dashboard on port {}",
+            port
+        );
+
         // Start metrics collection
         self.start_metrics_collection().await;
-        
+
         // Start alert monitoring
         self.start_alert_monitoring().await;
-        
+
         // Start regression detection
         self.start_regression_detection().await;
-        
+
         // Start web server
         self.start_web_server(port).await
     }
-    
+
     async fn start_metrics_collection(&self) {
         let state = self.state.clone();
         let collector = self.metrics_collector.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(1));
             loop {
@@ -176,11 +178,11 @@ impl PerformanceDashboard {
             }
         });
     }
-    
+
     async fn start_alert_monitoring(&self) {
         let state = self.state.clone();
         let alert_system = self.alert_system.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(5));
             loop {
@@ -189,11 +191,11 @@ impl PerformanceDashboard {
             }
         });
     }
-    
+
     async fn start_regression_detection(&self) {
         let state = self.state.clone();
         let detector = self.regression_detector.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(60));
             loop {
@@ -202,10 +204,10 @@ impl PerformanceDashboard {
             }
         });
     }
-    
+
     async fn start_web_server(&self, port: u16) -> Result<(), Box<dyn std::error::Error>> {
         let state = self.state.clone();
-        
+
         // WebSocket route for real-time updates
         let state_for_ws = state.clone();
         let ws_route = warp::path("ws")
@@ -214,48 +216,36 @@ impl PerformanceDashboard {
             .map(|ws: warp::ws::Ws, state: DashboardState| {
                 ws.on_upgrade(move |websocket| handle_websocket(websocket, state))
             });
-        
+
         // Static files and API routes
         let state_for_metrics = state.clone();
         let state_for_alerts = state.clone();
         let state_for_regression = state.clone();
-        
-        let api_routes = warp::path("api")
-            .and(
-                warp::path("metrics")
+
+        let api_routes = warp::path("api").and(
+            warp::path("metrics")
                 .and(warp::get())
                 .and(warp::any().map(move || state_for_metrics.clone()))
                 .and_then(get_metrics)
-                .or(
-                    warp::path("alerts")
+                .or(warp::path("alerts")
                     .and(warp::get())
                     .and(warp::any().map(move || state_for_alerts.clone()))
-                    .and_then(get_alerts)
-                )
-                .or(
-                    warp::path("regression")
+                    .and_then(get_alerts))
+                .or(warp::path("regression")
                     .and(warp::get())
                     .and(warp::any().map(move || state_for_regression.clone()))
-                    .and_then(get_regression_analysis)
-                )
-            );
-        
-        let static_files = warp::path("static")
-            .and(warp::fs::dir("web/static"));
-        
-        let index = warp::path::end()
-            .and(warp::fs::file("web/templates/dashboard.html"));
-        
-        let routes = ws_route
-            .or(api_routes)
-            .or(static_files)
-            .or(index);
-        
+                    .and_then(get_regression_analysis)),
+        );
+
+        let static_files = warp::path("static").and(warp::fs::dir("web/static"));
+
+        let index = warp::path::end().and(warp::fs::file("web/templates/dashboard.html"));
+
+        let routes = ws_route.or(api_routes).or(static_files).or(index);
+
         println!("📊 Dashboard available at http://localhost:{}", port);
-        warp::serve(routes)
-            .run(([0, 0, 0, 0], port))
-            .await;
-        
+        warp::serve(routes).run(([0, 0, 0, 0], port)).await;
+
         Ok(())
     }
 }
@@ -270,7 +260,7 @@ impl MetricsCollector {
     pub fn new(state: DashboardState) -> Self {
         Self { state }
     }
-    
+
     pub async fn collect_all_metrics(&self) {
         tokio::join!(
             self.collect_m3_max_metrics(),
@@ -278,13 +268,13 @@ impl MetricsCollector {
             self.collect_throughput_metrics()
         );
     }
-    
+
     async fn collect_m3_max_metrics(&self) {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        
+
         // M3 Max specific metrics collection
         let metrics = M3MaxMetrics {
             timestamp,
@@ -300,22 +290,22 @@ impl MetricsCollector {
             thermal_state: self.get_thermal_state().await,
             power_consumption: self.get_power_consumption().await,
         };
-        
+
         let mut m3_metrics = self.state.m3_max_metrics.lock().unwrap();
         m3_metrics.push(metrics);
-        
+
         // Keep only last 1000 samples
         if m3_metrics.len() > 1000 {
             m3_metrics.remove(0);
         }
     }
-    
+
     async fn collect_system_metrics(&self) {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        
+
         let metrics = SystemMetrics {
             timestamp,
             memory_usage_percent: self.get_memory_usage_percent().await,
@@ -329,21 +319,21 @@ impl MetricsCollector {
             thread_count: self.get_thread_count().await,
             temperature: self.get_cpu_temperature().await,
         };
-        
+
         let mut sys_metrics = self.state.system_metrics.lock().unwrap();
         sys_metrics.push(metrics);
-        
+
         if sys_metrics.len() > 1000 {
             sys_metrics.remove(0);
         }
     }
-    
+
     async fn collect_throughput_metrics(&self) {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        
+
         let metrics = ThroughputMetrics {
             timestamp,
             documents_processed: self.get_documents_processed().await,
@@ -356,92 +346,144 @@ impl MetricsCollector {
             model_inference_time_ms: self.get_model_inference_time().await,
             data_pipeline_latency_ms: self.get_pipeline_latency().await,
         };
-        
+
         let mut throughput_metrics = self.state.throughput_metrics.lock().unwrap();
         throughput_metrics.push(metrics);
-        
+
         if throughput_metrics.len() > 1000 {
             throughput_metrics.remove(0);
         }
     }
-    
+
     // M3 Max specific metric collection methods
     async fn get_unified_memory_total(&self) -> u64 {
         // Use system_profiler to get M3 Max unified memory info
         128 * 1024 * 1024 * 1024 // 128GB typical M3 Max config
     }
-    
+
     async fn get_unified_memory_used(&self) -> u64 {
         // Read from system APIs
         self.read_memory_pressure().await.unwrap_or(0)
     }
-    
+
     async fn get_unified_memory_free(&self) -> u64 {
         let total = self.get_unified_memory_total().await;
         let used = self.get_unified_memory_used().await;
         total.saturating_sub(used)
     }
-    
+
     async fn get_memory_bandwidth_utilization(&self) -> f64 {
         // M3 Max specific memory bandwidth monitoring
         self.read_memory_bandwidth().await.unwrap_or(0.0)
     }
-    
+
     async fn get_neural_engine_utilization(&self) -> f64 {
         // Monitor Neural Engine usage for ML inference
         self.read_neural_engine_usage().await.unwrap_or(0.0)
     }
-    
+
     async fn get_gpu_utilization(&self) -> f64 {
         // M3 Max GPU core utilization
         self.read_gpu_utilization().await.unwrap_or(0.0)
     }
-    
+
     async fn get_cpu_load(&self) -> f64 {
         // CPU load average
         self.read_cpu_load().await.unwrap_or(0.0)
     }
-    
+
     async fn get_thermal_state(&self) -> String {
         // M3 Max thermal monitoring
-        self.read_thermal_state().await.unwrap_or_else(|| "Normal".to_string())
+        self.read_thermal_state()
+            .await
+            .unwrap_or_else(|| "Normal".to_string())
     }
-    
+
     async fn get_power_consumption(&self) -> f64 {
         // Power consumption monitoring
         self.read_power_consumption().await.unwrap_or(0.0)
     }
-    
+
     // System metric collection methods (implementation details)
-    async fn get_memory_usage_percent(&self) -> f64 { 0.0 }
-    async fn get_memory_efficiency(&self) -> f64 { 0.0 }
-    async fn get_disk_io_read(&self) -> f64 { 0.0 }
-    async fn get_disk_io_write(&self) -> f64 { 0.0 }
-    async fn get_network_rx(&self) -> f64 { 0.0 }
-    async fn get_network_tx(&self) -> f64 { 0.0 }
-    async fn get_active_processes(&self) -> u32 { 0 }
-    async fn get_thread_count(&self) -> u32 { 0 }
-    async fn get_cpu_temperature(&self) -> f64 { 0.0 }
-    
+    async fn get_memory_usage_percent(&self) -> f64 {
+        0.0
+    }
+    async fn get_memory_efficiency(&self) -> f64 {
+        0.0
+    }
+    async fn get_disk_io_read(&self) -> f64 {
+        0.0
+    }
+    async fn get_disk_io_write(&self) -> f64 {
+        0.0
+    }
+    async fn get_network_rx(&self) -> f64 {
+        0.0
+    }
+    async fn get_network_tx(&self) -> f64 {
+        0.0
+    }
+    async fn get_active_processes(&self) -> u32 {
+        0
+    }
+    async fn get_thread_count(&self) -> u32 {
+        0
+    }
+    async fn get_cpu_temperature(&self) -> f64 {
+        0.0
+    }
+
     // Throughput metric collection methods
-    async fn get_documents_processed(&self) -> u64 { 0 }
-    async fn get_documents_per_minute(&self) -> f64 { 0.0 }
-    async fn get_avg_processing_time(&self) -> f64 { 0.0 }
-    async fn get_queue_depth(&self) -> u32 { 0 }
-    async fn get_active_workers(&self) -> u32 { 0 }
-    async fn get_success_rate(&self) -> f64 { 0.0 }
-    async fn get_error_rate(&self) -> f64 { 0.0 }
-    async fn get_model_inference_time(&self) -> f64 { 0.0 }
-    async fn get_pipeline_latency(&self) -> f64 { 0.0 }
-    
+    async fn get_documents_processed(&self) -> u64 {
+        0
+    }
+    async fn get_documents_per_minute(&self) -> f64 {
+        0.0
+    }
+    async fn get_avg_processing_time(&self) -> f64 {
+        0.0
+    }
+    async fn get_queue_depth(&self) -> u32 {
+        0
+    }
+    async fn get_active_workers(&self) -> u32 {
+        0
+    }
+    async fn get_success_rate(&self) -> f64 {
+        0.0
+    }
+    async fn get_error_rate(&self) -> f64 {
+        0.0
+    }
+    async fn get_model_inference_time(&self) -> f64 {
+        0.0
+    }
+    async fn get_pipeline_latency(&self) -> f64 {
+        0.0
+    }
+
     // Low-level system readers (platform specific implementations)
-    async fn read_memory_pressure(&self) -> Option<u64> { None }
-    async fn read_memory_bandwidth(&self) -> Option<f64> { None }
-    async fn read_neural_engine_usage(&self) -> Option<f64> { None }
-    async fn read_gpu_utilization(&self) -> Option<f64> { None }
-    async fn read_cpu_load(&self) -> Option<f64> { None }
-    async fn read_thermal_state(&self) -> Option<String> { None }
-    async fn read_power_consumption(&self) -> Option<f64> { None }
+    async fn read_memory_pressure(&self) -> Option<u64> {
+        None
+    }
+    async fn read_memory_bandwidth(&self) -> Option<f64> {
+        None
+    }
+    async fn read_neural_engine_usage(&self) -> Option<f64> {
+        None
+    }
+    async fn read_gpu_utilization(&self) -> Option<f64> {
+        None
+    }
+    async fn read_cpu_load(&self) -> Option<f64> {
+        None
+    }
+    async fn read_thermal_state(&self) -> Option<String> {
+        None
+    }
+    async fn read_power_consumption(&self) -> Option<f64> {
+        None
+    }
 }
 
 /// Alert system for performance monitoring
@@ -454,7 +496,7 @@ impl AlertSystem {
     pub fn new(state: DashboardState) -> Self {
         Self { state }
     }
-    
+
     pub async fn check_alerts(&self) {
         self.check_memory_alerts().await;
         self.check_cpu_alerts().await;
@@ -462,19 +504,25 @@ impl AlertSystem {
         self.check_throughput_alerts().await;
         self.check_error_rate_alerts().await;
     }
-    
+
     async fn check_memory_alerts(&self) {
         let new_alert = {
             let m3_metrics = self.state.m3_max_metrics.lock().unwrap();
             let thresholds = self.state.alert_thresholds.lock().unwrap();
-            
+
             if let Some(latest) = m3_metrics.last() {
-                let usage_percent = (latest.unified_memory_used as f64 / latest.unified_memory_total as f64) * 100.0;
-                
+                let usage_percent = (latest.unified_memory_used as f64
+                    / latest.unified_memory_total as f64)
+                    * 100.0;
+
                 if usage_percent > thresholds.memory_usage_percent {
                     let alert = PerformanceAlert {
                         timestamp: latest.timestamp,
-                        severity: if usage_percent > 95.0 { AlertSeverity::Critical } else { AlertSeverity::Warning },
+                        severity: if usage_percent > 95.0 {
+                            AlertSeverity::Critical
+                        } else {
+                            AlertSeverity::Warning
+                        },
                         component: "Memory".to_string(),
                         message: format!("High memory usage: {:.1}%", usage_percent),
                         value: usage_percent,
@@ -485,13 +533,13 @@ impl AlertSystem {
                             "Scale horizontally with more workers".to_string(),
                         ],
                     };
-                    
+
                     let new_alert = {
                         let mut alerts = self.state.alerts.lock().unwrap();
                         alerts.push(alert);
                         alerts.last().unwrap().clone()
                     };
-                    
+
                     Some(new_alert)
                 } else {
                     None
@@ -500,24 +548,24 @@ impl AlertSystem {
                 None
             }
         };
-        
+
         if let Some(alert) = new_alert {
             self.broadcast_alert(&alert).await;
         }
     }
-    
+
     async fn check_cpu_alerts(&self) {
         // CPU alerting logic
     }
-    
+
     async fn check_temperature_alerts(&self) {
         // Temperature alerting logic
     }
-    
+
     async fn check_throughput_alerts(&self) {
         // Throughput alerting logic
     }
-    
+
     async fn check_error_rate_alerts(&self) {
         // Error rate alerting logic
     }
@@ -525,7 +573,7 @@ impl AlertSystem {
     async fn broadcast_alert(&self, alert: &PerformanceAlert) {
         let alert_msg = serde_json::to_string(&alert).unwrap();
         println!("📢 Broadcasting alert: {}", alert_msg);
-        
+
         // Simplified alert broadcasting - in a real implementation,
         // this would use a proper WebSocket broadcasting mechanism
         // that doesn't hold locks across await points
@@ -542,29 +590,38 @@ impl RegressionDetector {
     pub fn new(state: DashboardState) -> Self {
         Self { state }
     }
-    
+
     pub async fn analyze_regressions(&self) {
         self.analyze_throughput_regression().await;
         // Add other regression analyses here
     }
-    
+
     async fn analyze_throughput_regression(&self) {
         let throughput_metrics = self.state.throughput_metrics.lock().unwrap();
         let mut analysis_map = self.state.regression_analysis.lock().unwrap();
-        
+
         if throughput_metrics.len() < 100 {
             return; // Not enough data for analysis
         }
-        
+
         // Simple baseline: last 50 vs. previous 50
-        let recent_metrics = &throughput_metrics[throughput_metrics.len()-50..];
-        let baseline_metrics = &throughput_metrics[throughput_metrics.len()-100..throughput_metrics.len()-50];
-        
-        let recent_avg = recent_metrics.iter().map(|m| m.average_processing_time_ms).sum::<f64>() / 50.0;
-        let baseline_avg = baseline_metrics.iter().map(|m| m.average_processing_time_ms).sum::<f64>() / 50.0;
-        
+        let recent_metrics = &throughput_metrics[throughput_metrics.len() - 50..];
+        let baseline_metrics =
+            &throughput_metrics[throughput_metrics.len() - 100..throughput_metrics.len() - 50];
+
+        let recent_avg = recent_metrics
+            .iter()
+            .map(|m| m.average_processing_time_ms)
+            .sum::<f64>()
+            / 50.0;
+        let baseline_avg = baseline_metrics
+            .iter()
+            .map(|m| m.average_processing_time_ms)
+            .sum::<f64>()
+            / 50.0;
+
         let percentage_change = ((recent_avg - baseline_avg) / baseline_avg) * 100.0;
-        
+
         let analysis = RegressionAnalysis {
             metric_name: "Average Processing Time".to_string(),
             baseline_value: baseline_avg,
@@ -572,7 +629,11 @@ impl RegressionDetector {
             percentage_change,
             is_regression: percentage_change > 10.0, // 10% increase is a regression
             confidence_score: self.calculate_confidence_score(recent_metrics, baseline_metrics),
-            trend_direction: if percentage_change > 0.0 { "Increasing".to_string() } else { "Decreasing".to_string() },
+            trend_direction: if percentage_change > 0.0 {
+                "Increasing".to_string()
+            } else {
+                "Decreasing".to_string()
+            },
             recommended_actions: if percentage_change > 10.0 {
                 vec![
                     "Review recent code changes for performance impact.".to_string(),
@@ -583,15 +644,19 @@ impl RegressionDetector {
                 Vec::new()
             },
         };
-        
+
         analysis_map.insert("avg_processing_time".to_string(), analysis);
     }
-    
-    fn calculate_confidence_score(&self, recent: &[ThroughputMetrics], baseline: &[ThroughputMetrics]) -> f64 {
+
+    fn calculate_confidence_score(
+        &self,
+        recent: &[ThroughputMetrics],
+        baseline: &[ThroughputMetrics],
+    ) -> f64 {
         // Simplified confidence score
         let recent_std_dev = self.calculate_std_dev(recent);
         let baseline_std_dev = self.calculate_std_dev(baseline);
-        
+
         if (recent_std_dev + baseline_std_dev) > 0.0 {
             1.0 - (recent_std_dev / (recent_std_dev + baseline_std_dev))
         } else {
@@ -600,21 +665,32 @@ impl RegressionDetector {
     }
 
     fn calculate_std_dev(&self, metrics: &[ThroughputMetrics]) -> f64 {
-        let mean = metrics.iter().map(|m| m.average_processing_time_ms).sum::<f64>() / metrics.len() as f64;
-        let variance = metrics.iter().map(|m| {
-            let diff = m.average_processing_time_ms - mean;
-            diff * diff
-        }).sum::<f64>() / metrics.len() as f64;
+        let mean = metrics
+            .iter()
+            .map(|m| m.average_processing_time_ms)
+            .sum::<f64>()
+            / metrics.len() as f64;
+        let variance = metrics
+            .iter()
+            .map(|m| {
+                let diff = m.average_processing_time_ms - mean;
+                diff * diff
+            })
+            .sum::<f64>()
+            / metrics.len() as f64;
         variance.sqrt()
     }
 }
-
 
 async fn handle_websocket(websocket: warp::ws::WebSocket, state: DashboardState) {
     println!("🔌 WebSocket client connected");
 
     let client_ws = Arc::new(Mutex::new(websocket));
-    state.connected_clients.lock().unwrap().push(client_ws.clone());
+    state
+        .connected_clients
+        .lock()
+        .unwrap()
+        .push(client_ws.clone());
 
     let client_rx_fut = async {
         // Simplified WebSocket handling to avoid split() issues
@@ -625,18 +701,17 @@ async fn handle_websocket(websocket: warp::ws::WebSocket, state: DashboardState)
     println!("🔌 WebSocket client disconnected");
 }
 
-
 async fn get_metrics(state: DashboardState) -> Result<impl Reply, warp::Rejection> {
     let m3_metrics = state.m3_max_metrics.lock().unwrap();
     let sys_metrics = state.system_metrics.lock().unwrap();
     let throughput_metrics = state.throughput_metrics.lock().unwrap();
-    
+
     let response = serde_json::json!({
         "m3_max_metrics": m3_metrics.clone(),
         "system_metrics": sys_metrics.clone(),
         "throughput_metrics": throughput_metrics.clone(),
     });
-    
+
     Ok(warp::reply::json(&response))
 }
 

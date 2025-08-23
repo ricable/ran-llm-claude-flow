@@ -5,7 +5,7 @@ Core protocol definitions and message handling for the Model Context Protocol.
 Provides standardized communication patterns and error handling.
 */
 
-use crate::{Result, PipelineError};
+use crate::{PipelineError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -181,7 +181,7 @@ impl MessageValidator {
         // Check version
         if envelope.version != MCP_VERSION {
             return Err(PipelineError::Mcp(format!(
-                "Unsupported protocol version: {} (expected: {})", 
+                "Unsupported protocol version: {} (expected: {})",
                 envelope.version, MCP_VERSION
             )));
         }
@@ -208,17 +208,21 @@ impl MessageValidator {
     pub fn validate_handshake(handshake: &McpHandshake) -> Result<()> {
         if handshake.protocol_version != MCP_VERSION {
             return Err(PipelineError::Mcp(format!(
-                "Unsupported protocol version in handshake: {}", 
+                "Unsupported protocol version in handshake: {}",
                 handshake.protocol_version
             )));
         }
 
         if handshake.client_info.client_id.is_empty() {
-            return Err(PipelineError::Mcp("Client ID is required in handshake".to_string()));
+            return Err(PipelineError::Mcp(
+                "Client ID is required in handshake".to_string(),
+            ));
         }
 
         if handshake.capabilities.is_empty() {
-            return Err(PipelineError::Mcp("At least one capability is required".to_string()));
+            return Err(PipelineError::Mcp(
+                "At least one capability is required".to_string(),
+            ));
         }
 
         Ok(())
@@ -231,7 +235,9 @@ impl MessageValidator {
         }
 
         if batch.messages.len() > 100 {
-            return Err(PipelineError::Mcp("Batch size exceeds maximum limit (100)".to_string()));
+            return Err(PipelineError::Mcp(
+                "Batch size exceeds maximum limit (100)".to_string(),
+            ));
         }
 
         // Validate each message in the batch
@@ -263,8 +269,8 @@ impl MessageRouter {
     }
 
     /// Register a message handler
-    pub fn register_handler<H>(&mut self, handler: H) 
-    where 
+    pub fn register_handler<H>(&mut self, handler: H)
+    where
         H: MessageHandler + Send + Sync + 'static,
     {
         let handler_key = format!("handler_{}", self.handlers.len());
@@ -285,7 +291,7 @@ impl MessageRouter {
 
         // No handler found
         Err(PipelineError::Mcp(format!(
-            "No handler found for message type: {}", 
+            "No handler found for message type: {}",
             envelope.message_type
         )))
     }
@@ -299,7 +305,7 @@ impl MessageHandler for HandshakeHandler {
         message_type == "handshake"
     }
 
-    fn handle(&self, mut envelope: McpEnvelope) -> Result<Option<McpEnvelope>> {
+    fn handle(&self, envelope: McpEnvelope) -> Result<Option<McpEnvelope>> {
         // Parse handshake payload
         let handshake: McpHandshake = serde_json::from_value(envelope.payload.clone())
             .map_err(|e| PipelineError::Mcp(format!("Invalid handshake payload: {}", e)))?;
@@ -351,9 +357,9 @@ pub struct ProtocolUtils;
 impl ProtocolUtils {
     /// Create error response envelope
     pub fn create_error_response(
-        original: &McpEnvelope, 
-        error_code: ProtocolErrorCode, 
-        details: Option<String>
+        original: &McpEnvelope,
+        error_code: ProtocolErrorCode,
+        details: Option<String>,
     ) -> McpEnvelope {
         let payload = serde_json::json!({
             "error": {
@@ -368,8 +374,8 @@ impl ProtocolUtils {
 
     /// Create success response envelope
     pub fn create_success_response(
-        original: &McpEnvelope, 
-        data: Option<serde_json::Value>
+        original: &McpEnvelope,
+        data: Option<serde_json::Value>,
     ) -> McpEnvelope {
         let payload = serde_json::json!({
             "success": true,
@@ -381,12 +387,9 @@ impl ProtocolUtils {
 
     /// Calculate message checksum
     pub fn calculate_checksum(data: &[u8]) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        data.hash(&mut hasher);
-        format!("{:x}", hasher.finish())
+        // Use deterministic CRC32 hash for consistent results across platforms
+        let checksum = crc32fast::hash(data);
+        format!("{:08x}", checksum)
     }
 
     /// Serialize envelope to JSON
@@ -417,8 +420,12 @@ mod tests {
     #[test]
     fn test_envelope_creation() {
         let payload = serde_json::json!({"test": "data"});
-        let envelope = McpEnvelope::new("test_sender".to_string(), "test_message".to_string(), payload);
-        
+        let envelope = McpEnvelope::new(
+            "test_sender".to_string(),
+            "test_message".to_string(),
+            payload,
+        );
+
         assert_eq!(envelope.sender_id, "test_sender");
         assert_eq!(envelope.message_type, "test_message");
         assert_eq!(envelope.version, MCP_VERSION);
@@ -429,10 +436,10 @@ mod tests {
         let payload = serde_json::json!({"test": "data"});
         let envelope = McpEnvelope::new("sender".to_string(), "request".to_string(), payload)
             .to("recipient".to_string());
-        
+
         let response_payload = serde_json::json!({"status": "ok"});
         let response = envelope.create_response(response_payload);
-        
+
         assert_eq!(response.message_type, "request_response");
         assert_eq!(response.sender_id, "recipient");
         assert_eq!(response.recipient_id, Some("sender".to_string()));
@@ -442,16 +449,20 @@ mod tests {
     fn test_message_validation() {
         let payload = serde_json::json!({"test": "data"});
         let envelope = McpEnvelope::new("sender".to_string(), "test".to_string(), payload);
-        
+
         let result = MessageValidator::validate_envelope(&envelope);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_invalid_version() {
-        let mut envelope = McpEnvelope::new("sender".to_string(), "test".to_string(), serde_json::json!({}));
+        let mut envelope = McpEnvelope::new(
+            "sender".to_string(),
+            "test".to_string(),
+            serde_json::json!({}),
+        );
         envelope.version = "0.5.0".to_string();
-        
+
         let result = MessageValidator::validate_envelope(&envelope);
         assert!(result.is_err());
     }
@@ -480,7 +491,7 @@ mod tests {
     fn test_message_router() {
         let mut router = MessageRouter::new();
         router.register_handler(HandshakeHandler);
-        
+
         let handshake = McpHandshake {
             protocol_version: MCP_VERSION.to_string(),
             client_info: ClientInfo {
@@ -496,9 +507,9 @@ mod tests {
         };
 
         let envelope = McpEnvelope::new(
-            "client".to_string(), 
-            "handshake".to_string(), 
-            serde_json::to_value(handshake).unwrap()
+            "client".to_string(),
+            "handshake".to_string(),
+            serde_json::to_value(handshake).unwrap(),
         );
 
         let result = router.route_message(envelope);
@@ -510,6 +521,6 @@ mod tests {
     fn test_checksum_calculation() {
         let data = b"hello world";
         let checksum = ProtocolUtils::calculate_checksum(data);
-        assert_eq!(checksum, "30079c5b6736a935");
+        assert_eq!(checksum, "0d4a1185");
     }
 }

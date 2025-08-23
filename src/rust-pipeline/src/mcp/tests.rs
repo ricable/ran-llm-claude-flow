@@ -8,15 +8,17 @@ Tests server, client, host, and protocol components under various conditions.
 #[cfg(test)]
 mod tests {
     use super::super::{
+        client::{
+            AgentMetrics, AgentState, AgentStatus, McpClient, McpClientConfig, MessagePriority,
+        },
+        host::{LoadBalancingStrategy, McpHost, McpHostConfig},
+        protocol::{HandshakeHandler, McpEnvelope, MessageRouter, MessageValidator},
         server::{McpServer, McpServerConfig},
-        client::{McpClient, McpClientConfig, AgentState, AgentStatus, AgentMetrics, MessagePriority},
-        host::{McpHost, McpHostConfig, LoadBalancingStrategy},
-        protocol::{McpEnvelope, MessageValidator, MessageRouter, HandshakeHandler},
         *,
     };
-    use crate::{Result, PipelineError};
+    use crate::Result;
     use std::time::Duration;
-    use tokio::time::{sleep, timeout};
+    use tokio::time::sleep;
     use uuid::Uuid;
 
     /// Test MCP server basic functionality
@@ -24,15 +26,13 @@ mod tests {
     async fn test_mcp_server_basic() -> Result<()> {
         let mut config = McpServerConfig::default();
         config.port = 8701; // Use different port to avoid conflicts
-        
+
         let server = McpServer::with_config(config);
-        
+
         // Start server in background
         let server_handle = {
             let server_clone = server.clone();
-            tokio::spawn(async move {
-                server_clone.start().await
-            })
+            tokio::spawn(async move { server_clone.start().await })
         };
 
         // Give server time to start
@@ -46,7 +46,7 @@ mod tests {
         // Stop server
         server.stop().await?;
         server_handle.abort();
-        
+
         Ok(())
     }
 
@@ -55,12 +55,15 @@ mod tests {
     async fn test_mcp_client_creation() -> Result<()> {
         let mut config = McpClientConfig::default();
         config.server_url = "ws://localhost:8702".to_string();
-        
+
         let client = McpClient::with_config(config);
-        
+
         // Test initial state
-        assert_eq!(client.get_connection_state(), super::super::client::ConnectionState::Disconnected);
-        
+        assert_eq!(
+            client.get_connection_state(),
+            super::super::client::ConnectionState::Disconnected
+        );
+
         // Test agent registration (without connecting)
         let agent = AgentState {
             agent_id: "test_agent_1".to_string(),
@@ -86,7 +89,7 @@ mod tests {
         config.max_concurrent_pipelines = 5;
         config.max_concurrent_tasks = 20;
         config.load_balancing_strategy = LoadBalancingStrategy::LeastLoaded;
-        
+
         let host = McpHost::with_config(config);
         host.start().await?;
 
@@ -123,7 +126,7 @@ mod tests {
         let envelope = McpEnvelope::new(
             "test_sender".to_string(),
             "test_message".to_string(),
-            payload
+            payload,
         );
 
         let result = MessageValidator::validate_envelope(&envelope);
@@ -132,7 +135,7 @@ mod tests {
         // Test invalid envelope (empty sender)
         let mut invalid_envelope = envelope.clone();
         invalid_envelope.sender_id = "".to_string();
-        
+
         let result = MessageValidator::validate_envelope(&invalid_envelope);
         assert!(result.is_err());
 
@@ -144,7 +147,7 @@ mod tests {
         let test_envelope = McpEnvelope::new(
             "client".to_string(),
             "unknown_message".to_string(),
-            serde_json::json!({})
+            serde_json::json!({}),
         );
 
         let result = router.route_message(test_envelope);
@@ -159,7 +162,7 @@ mod tests {
         // Test invalid server configuration
         let mut invalid_config = McpServerConfig::default();
         invalid_config.port = 0; // Invalid port
-        
+
         let server = McpServer::with_config(invalid_config);
         let result = server.start().await;
         assert!(result.is_err());
@@ -169,7 +172,7 @@ mod tests {
         client_config.server_url = "ws://invalid-host:9999".to_string();
         client_config.reconnect_attempts = 1;
         client_config.reconnect_delay = Duration::from_millis(100);
-        
+
         let client = McpClient::with_config(client_config);
         let result = client.start().await;
         assert!(result.is_ok()); // Client start always succeeds, connection happens in background
@@ -177,12 +180,16 @@ mod tests {
         // Test message queue overflow
         for i in 0..100 {
             let message = McpMessage::HealthCheck;
-            let _ = client.send_message_async(message, MessagePriority::Low).await;
+            let _ = client
+                .send_message_async(message, MessagePriority::Low)
+                .await;
         }
 
         // Try to add one more message - should fail
         let message = McpMessage::HealthCheck;
-        let result = client.send_message_async(message, MessagePriority::Low).await;
+        let result = client
+            .send_message_async(message, MessagePriority::Low)
+            .await;
         match result {
             Ok(_) => println!("Message queued successfully"),
             Err(_) => println!("Message queue full as expected"),
@@ -198,15 +205,13 @@ mod tests {
         let mut server_config = McpServerConfig::default();
         server_config.port = 8703;
         server_config.max_connections = 100;
-        
+
         let server = McpServer::with_config(server_config);
-        
+
         // Start server
         let server_handle = {
             let server_clone = server.clone();
-            tokio::spawn(async move {
-                server_clone.start().await
-            })
+            tokio::spawn(async move { server_clone.start().await })
         };
 
         // Give server time to start
@@ -221,7 +226,7 @@ mod tests {
             client_config.server_url = "ws://localhost:8703".to_string();
             client_config.client_type = ClientType::PythonWorker;
             client_config.reconnect_attempts = 3;
-            
+
             let client = McpClient::with_config(client_config);
             clients.push(client);
         }
@@ -248,14 +253,16 @@ mod tests {
         let total_messages = num_clients * messages_per_client;
         let messages_per_second = total_messages as f64 / elapsed.as_secs_f64();
 
-        println!("Performance test: {} messages in {:?} ({:.2} msg/sec)", 
-                 total_messages, elapsed, messages_per_second);
+        println!(
+            "Performance test: {} messages in {:?} ({:.2} msg/sec)",
+            total_messages, elapsed, messages_per_second
+        );
 
         // Cleanup
         for client in clients {
             client.stop().await?;
         }
-        
+
         server.stop().await?;
         server_handle.abort();
 
@@ -266,7 +273,7 @@ mod tests {
     #[tokio::test]
     async fn test_agent_coordination() -> Result<()> {
         let client = McpClient::new();
-        
+
         // Register multiple agents
         let agents = vec![
             AgentState {
@@ -281,7 +288,10 @@ mod tests {
             AgentState {
                 agent_id: "python_worker_1".to_string(),
                 agent_type: "python_worker".to_string(),
-                capabilities: vec!["ml_inference".to_string(), "document_processing".to_string()],
+                capabilities: vec![
+                    "ml_inference".to_string(),
+                    "document_processing".to_string(),
+                ],
                 status: AgentStatus::Idle,
                 current_task: None,
                 performance_metrics: AgentMetrics::default(),
@@ -330,7 +340,7 @@ mod tests {
     #[tokio::test]
     async fn test_message_priority() -> Result<()> {
         let client = McpClient::new();
-        
+
         // Send messages with different priorities
         let messages = vec![
             (McpMessage::HealthCheck, MessagePriority::Low),
@@ -346,7 +356,7 @@ mod tests {
         // Check queue ordering (critical should be first)
         // Note: We can't directly access the private message_queue field,
         // so we'll verify the behavior through public methods instead
-        
+
         // For now, just verify that messages were queued successfully
         // In a real implementation, we'd add a public method to check queue state
         println!("Messages queued successfully with different priorities");
@@ -415,26 +425,27 @@ mod tests {
         // Test server restart scenario
         let mut config = McpServerConfig::default();
         config.port = 8704;
-        
+
         let server = McpServer::with_config(config.clone());
-        
+
         // Start and stop server multiple times
         for i in 0..3 {
             let server_handle = {
                 let server_clone = server.clone();
-                tokio::spawn(async move {
-                    server_clone.start().await
-                })
+                tokio::spawn(async move { server_clone.start().await })
             };
 
             sleep(Duration::from_millis(50)).await;
-            
+
             let stats = server.get_stats().await;
-            println!("Iteration {}: Active connections: {}", i, stats.active_connections);
-            
+            println!(
+                "Iteration {}: Active connections: {}",
+                i, stats.active_connections
+            );
+
             server.stop().await?;
             server_handle.abort();
-            
+
             sleep(Duration::from_millis(50)).await;
         }
 
@@ -445,7 +456,12 @@ mod tests {
         // Simulate multiple connection failures
         for i in 0..3 {
             // Update agent status during "network issues"
-            let result = client.update_agent_status("test_agent", AgentStatus::Error("Network issue".to_string())).await;
+            let result = client
+                .update_agent_status(
+                    "test_agent",
+                    AgentStatus::Error("Network issue".to_string()),
+                )
+                .await;
             match result {
                 Ok(_) => println!("Iteration {}: Agent status updated", i),
                 Err(e) => println!("Iteration {}: Agent update failed as expected: {}", i, e),
@@ -510,7 +526,7 @@ mod tests {
     #[tokio::test]
     async fn test_throughput_benchmark() -> Result<()> {
         let client = McpClient::new();
-        
+
         let start_time = std::time::Instant::now();
         let num_operations = 1000;
 
@@ -532,8 +548,10 @@ mod tests {
         let elapsed = start_time.elapsed();
         let ops_per_second = num_operations as f64 / elapsed.as_secs_f64();
 
-        println!("Benchmark: {} operations in {:?} ({:.2} ops/sec)", 
-                 num_operations, elapsed, ops_per_second);
+        println!(
+            "Benchmark: {} operations in {:?} ({:.2} ops/sec)",
+            num_operations, elapsed, ops_per_second
+        );
 
         // Verify all agents were registered
         let agents = client.get_agents().await;

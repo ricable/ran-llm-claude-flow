@@ -4,7 +4,7 @@
 High-performance document reading with M3 Max memory optimizations.
 */
 
-use crate::{Result, PipelineError};
+use crate::{PipelineError, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
@@ -86,7 +86,10 @@ impl DocumentReader {
         // Check if file exists
         let path = Path::new(&request.file_path);
         if !path.exists() {
-            return Err(PipelineError::Io(format!("File not found: {}", request.file_path)));
+            return Err(PipelineError::Io(format!(
+                "File not found: {}",
+                request.file_path
+            )));
         }
 
         // Get file metadata
@@ -99,18 +102,20 @@ impl DocumentReader {
         if let Some(max_size) = request.read_options.max_size_bytes {
             if file_size > max_size as u64 {
                 return Err(PipelineError::Io(format!(
-                    "File too large: {} bytes (max: {} bytes)", 
+                    "File too large: {} bytes (max: {} bytes)",
                     file_size, max_size
                 )));
             }
         }
 
         // Read file content
-        let content = tokio::fs::read(path).await
+        let content = tokio::fs::read(path)
+            .await
             .map_err(|e| PipelineError::Io(format!("Failed to read file: {}", e)))?;
 
         // Detect format
-        let detected_format = request.format_hint
+        let detected_format = request
+            .format_hint
             .unwrap_or_else(|| self.detect_format(&request.file_path, &content));
 
         // Validate format if requested
@@ -118,13 +123,17 @@ impl DocumentReader {
             self.validate_format(&detected_format, &content)?;
         }
 
-        let read_time = start_time.elapsed()
+        let read_time = start_time
+            .elapsed()
             .unwrap_or(std::time::Duration::from_secs(0))
             .as_millis() as u64;
 
         let metadata = DocumentMetadata {
             file_size_bytes: file_size,
-            encoding: request.read_options.encoding.unwrap_or_else(|| "utf-8".to_string()),
+            encoding: request
+                .read_options
+                .encoding
+                .unwrap_or_else(|| "utf-8".to_string()),
             mime_type: self.detect_mime_type(&detected_format),
             creation_time: file_metadata.created().ok(),
             modification_time: file_metadata.modified().ok(),
@@ -142,7 +151,7 @@ impl DocumentReader {
     /// Detect document format from file extension and content
     fn detect_format(&self, file_path: &str, content: &[u8]) -> DocumentFormat {
         let path = Path::new(file_path);
-        
+
         if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
             match extension.to_lowercase().as_str() {
                 "pdf" => DocumentFormat::Pdf,
@@ -180,10 +189,10 @@ impl DocumentReader {
         match format {
             DocumentFormat::Pdf => {
                 // PDF validation would go here
-            },
+            }
             DocumentFormat::Json => {
                 // JSON validation would go here
-            },
+            }
             _ => {
                 // Other format validations
             }

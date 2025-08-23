@@ -5,20 +5,20 @@ Model Context Protocol client for coordinating with the MCP server and Python wo
 Provides agent coordination interface with reconnection logic and fault tolerance.
 */
 
-use crate::mcp::{McpMessage, McpError, ClientType};
-use crate::{Result, PipelineError};
+use crate::mcp::{ClientType, McpMessage};
+use crate::{PipelineError, Result};
 use futures::{SinkExt, StreamExt};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, oneshot, broadcast};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::{interval, timeout};
-use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream, MaybeTlsStream};
-use tracing::{error, info, warn, debug, trace};
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tracing::{debug, error, info, trace, warn};
 use url::Url;
 use uuid::Uuid;
 
@@ -166,7 +166,7 @@ impl McpClient {
     /// Create MCP client with custom configuration
     pub fn with_config(config: McpClientConfig) -> Self {
         let (event_sender, _) = broadcast::channel(1000);
-        
+
         Self {
             config,
             connection_state: Arc::new(RwLock::new(ConnectionState::Disconnected)),
@@ -194,7 +194,7 @@ impl McpClient {
 
         // Send connected event
         let _ = self.event_sender.send(ClientEvent::Connected);
-        
+
         info!("MCP client started successfully");
         Ok(())
     }
@@ -224,11 +224,16 @@ impl McpClient {
 
     /// Send message with response waiting
     pub async fn send_message(&self, message: McpMessage) -> Result<McpMessage> {
-        self.send_message_with_priority(message, MessagePriority::Normal).await
+        self.send_message_with_priority(message, MessagePriority::Normal)
+            .await
     }
 
     /// Send message with specific priority and wait for response
-    pub async fn send_message_with_priority(&self, message: McpMessage, priority: MessagePriority) -> Result<McpMessage> {
+    pub async fn send_message_with_priority(
+        &self,
+        message: McpMessage,
+        priority: MessagePriority,
+    ) -> Result<McpMessage> {
         let request_id = Uuid::new_v4();
         let (tx, rx) = oneshot::channel();
 
@@ -247,7 +252,7 @@ impl McpClient {
             if queue.len() >= self.config.max_queue_size {
                 return Err(PipelineError::Mcp("Message queue full".to_string()));
             }
-            
+
             // Insert based on priority (higher priority first)
             let mut insert_index = None;
             for (i, existing) in queue.iter().enumerate() {
@@ -256,7 +261,7 @@ impl McpClient {
                     break;
                 }
             }
-            
+
             if let Some(index) = insert_index {
                 queue.insert(index, queued_message);
             } else {
@@ -273,7 +278,11 @@ impl McpClient {
     }
 
     /// Send message without waiting for response
-    pub async fn send_message_async(&self, message: McpMessage, priority: MessagePriority) -> Result<Uuid> {
+    pub async fn send_message_async(
+        &self,
+        message: McpMessage,
+        priority: MessagePriority,
+    ) -> Result<Uuid> {
         let request_id = Uuid::new_v4();
 
         let queued_message = QueuedMessage {
@@ -291,7 +300,7 @@ impl McpClient {
             if queue.len() >= self.config.max_queue_size {
                 return Err(PipelineError::Mcp("Message queue full".to_string()));
             }
-            
+
             // Insert based on priority (higher priority first)
             let mut insert_index = None;
             for (i, existing) in queue.iter().enumerate() {
@@ -300,7 +309,7 @@ impl McpClient {
                     break;
                 }
             }
-            
+
             if let Some(index) = insert_index {
                 queue.insert(index, queued_message);
             } else {
@@ -314,7 +323,7 @@ impl McpClient {
     /// Register agent with the coordination system
     pub async fn register_agent(&self, agent: AgentState) -> Result<()> {
         let agent_id = agent.agent_id.clone();
-        
+
         // Store agent state
         {
             let mut agents = self.agents.write();
@@ -327,13 +336,13 @@ impl McpClient {
             capabilities: agent.capabilities.clone(),
         };
 
-        self.send_message_async(message, MessagePriority::High).await?;
+        self.send_message_async(message, MessagePriority::High)
+            .await?;
 
         // Notify event listeners
-        let _ = self.event_sender.send(ClientEvent::AgentUpdated(
-            agent_id,
-            agent.status
-        ));
+        let _ = self
+            .event_sender
+            .send(ClientEvent::AgentUpdated(agent_id, agent.status));
 
         info!("Agent registered: {}", agent.agent_id);
         Ok(())
@@ -352,10 +361,9 @@ impl McpClient {
         }
 
         // Notify event listeners
-        let _ = self.event_sender.send(ClientEvent::AgentUpdated(
-            agent_id.to_string(),
-            status
-        ));
+        let _ = self
+            .event_sender
+            .send(ClientEvent::AgentUpdated(agent_id.to_string(), status));
 
         Ok(())
     }
@@ -373,10 +381,9 @@ impl McpClient {
         }
 
         // Notify event listeners
-        let _ = self.event_sender.send(ClientEvent::TaskAssigned(
-            task_id,
-            agent_id.to_string()
-        ));
+        let _ = self
+            .event_sender
+            .send(ClientEvent::TaskAssigned(task_id, agent_id.to_string()));
 
         info!("Task {} assigned to agent {}", task_id, agent_id);
         Ok(())
@@ -390,7 +397,7 @@ impl McpClient {
                 agent.current_task = None;
                 agent.status = AgentStatus::Idle;
                 agent.performance_metrics.tasks_completed += 1;
-                
+
                 if !success {
                     agent.performance_metrics.error_count += 1;
                 }
@@ -398,7 +405,7 @@ impl McpClient {
                 // Update success rate
                 let total_tasks = agent.performance_metrics.tasks_completed;
                 let errors = agent.performance_metrics.error_count;
-                agent.performance_metrics.success_rate_percent = 
+                agent.performance_metrics.success_rate_percent =
                     ((total_tasks - errors) as f64 / total_tasks as f64) * 100.0;
             } else {
                 return Err(PipelineError::Mcp(format!("Agent {} not found", agent_id)));
@@ -406,12 +413,14 @@ impl McpClient {
         }
 
         // Notify event listeners
-        let _ = self.event_sender.send(ClientEvent::TaskCompleted(
-            task_id,
-            agent_id.to_string()
-        ));
+        let _ = self
+            .event_sender
+            .send(ClientEvent::TaskCompleted(task_id, agent_id.to_string()));
 
-        info!("Task {} completed by agent {} (success: {})", task_id, agent_id, success);
+        info!(
+            "Task {} completed by agent {} (success: {})",
+            task_id, agent_id, success
+        );
         Ok(())
     }
 
@@ -425,7 +434,10 @@ impl McpClient {
         let mut stats = self.stats.read().clone();
         stats.queue_size = self.message_queue.read().len();
         stats.pending_requests = self.pending_requests.read().len();
-        stats.active_agents = self.agents.read().values()
+        stats.active_agents = self
+            .agents
+            .read()
+            .values()
             .filter(|agent| matches!(agent.status, AgentStatus::Working))
             .count();
         stats
@@ -460,7 +472,7 @@ impl McpClient {
 
         tokio::spawn(async move {
             let mut reconnect_count = 0;
-            
+
             while is_running.load(Ordering::Relaxed) {
                 // Update connection state
                 *connection_state.write() = ConnectionState::Connecting;
@@ -484,7 +496,9 @@ impl McpClient {
                             message_queue.clone(),
                             pending_requests.clone(),
                             stats.clone(),
-                        ).await {
+                        )
+                        .await
+                        {
                             error!("Connection error: {}", e);
                             let _ = event_sender.send(ClientEvent::Error(e.to_string()));
                         }
@@ -504,11 +518,13 @@ impl McpClient {
                 if is_running.load(Ordering::Relaxed) {
                     reconnect_count += 1;
                     if reconnect_count <= config.reconnect_attempts {
-                        warn!("Reconnecting in {} seconds (attempt {}/{})", 
-                              config.reconnect_delay.as_secs(), 
-                              reconnect_count, 
-                              config.reconnect_attempts);
-                        
+                        warn!(
+                            "Reconnecting in {} seconds (attempt {}/{})",
+                            config.reconnect_delay.as_secs(),
+                            reconnect_count,
+                            config.reconnect_attempts
+                        );
+
                         tokio::time::sleep(config.reconnect_delay).await;
                     } else {
                         error!("Max reconnection attempts reached, giving up");
@@ -521,11 +537,14 @@ impl McpClient {
     }
 
     /// Establish WebSocket connection
-    async fn establish_connection(config: &McpClientConfig) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
+    async fn establish_connection(
+        config: &McpClientConfig,
+    ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
         let url = Url::parse(&config.server_url)
             .map_err(|e| PipelineError::Mcp(format!("Invalid server URL: {}", e)))?;
 
-        let (ws_stream, _) = connect_async(url).await
+        let (ws_stream, _) = connect_async(url)
+            .await
             .map_err(|e| PipelineError::Mcp(format!("WebSocket connection failed: {}", e)))?;
 
         Ok(ws_stream)
@@ -563,7 +582,7 @@ impl McpClient {
 
         let queue_task = tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(10));
-            
+
             while is_running_clone.load(Ordering::Relaxed) {
                 interval.tick().await;
 
@@ -586,16 +605,20 @@ impl McpClient {
                                     let mut stats = stats_clone.write();
                                     stats.total_messages_sent += 1;
                                 }
-                                
-                                let _ = event_sender_clone.send(ClientEvent::MessageSent(queued_msg.request_id));
+
+                                let _ = event_sender_clone
+                                    .send(ClientEvent::MessageSent(queued_msg.request_id));
                             }
                         }
                         Err(e) => {
                             error!("Failed to serialize message: {}", e);
-                            
+
                             // Send error response if there's a sender
                             if let Some(sender) = queued_msg.sender {
-                                let _ = sender.send(Err(PipelineError::Mcp(format!("Serialization error: {}", e))));
+                                let _ = sender.send(Err(PipelineError::Mcp(format!(
+                                    "Serialization error: {}",
+                                    e
+                                ))));
                             }
                         }
                     }
@@ -604,9 +627,9 @@ impl McpClient {
         });
 
         // Main message receiving loop
-        while is_running.load(Ordering::Relaxed) && 
-              *connection_state.read() == ConnectionState::Connected {
-            
+        while is_running.load(Ordering::Relaxed)
+            && *connection_state.read() == ConnectionState::Connected
+        {
             match timeout(Duration::from_secs(30), ws_receiver.next()).await {
                 Ok(Some(Ok(message))) => {
                     if let Err(e) = Self::process_incoming_message(
@@ -614,7 +637,9 @@ impl McpClient {
                         &pending_requests,
                         &stats,
                         &event_sender,
-                    ).await {
+                    )
+                    .await
+                    {
                         error!("Error processing incoming message: {}", e);
                     }
                 }
@@ -652,10 +677,9 @@ impl McpClient {
     ) -> Result<()> {
         let text = match message {
             Message::Text(text) => text,
-            Message::Binary(data) => {
-                String::from_utf8(data)
-                    .map_err(|e| PipelineError::Mcp(format!("Invalid UTF-8 in binary message: {}", e)))?
-            }
+            Message::Binary(data) => String::from_utf8(data).map_err(|e| {
+                PipelineError::Mcp(format!("Invalid UTF-8 in binary message: {}", e))
+            })?,
             Message::Pong(_) => {
                 debug!("Received pong from server");
                 return Ok(());
@@ -681,10 +705,12 @@ impl McpClient {
                 if let Some(sender) = pending_requests.write().remove(request_id) {
                     let result = match &mcp_message {
                         McpMessage::Success { .. } => Ok(mcp_message.clone()),
-                        McpMessage::Error { error, .. } => Err(PipelineError::Mcp(error.message.clone())),
+                        McpMessage::Error { error, .. } => {
+                            Err(PipelineError::Mcp(error.message.clone()))
+                        }
                         _ => unreachable!(),
                     };
-                    
+
                     let _ = sender.send(result);
                     let _ = event_sender.send(ClientEvent::MessageReceived(*request_id));
                 }
@@ -725,7 +751,9 @@ impl McpClient {
                     {
                         let agents = agents.read();
                         for (agent_id, agent) in agents.iter() {
-                            if current_time - agent.last_heartbeat > config.heartbeat_interval.as_secs() * 2 {
+                            if current_time - agent.last_heartbeat
+                                > config.heartbeat_interval.as_secs() * 2
+                            {
                                 agents_to_update.push(agent_id.clone());
                             }
                         }
@@ -820,13 +848,17 @@ mod tests {
     #[tokio::test]
     async fn test_message_priority_queue() {
         let client = McpClient::new();
-        
+
         let low_msg = McpMessage::HealthCheck;
         let high_msg = McpMessage::SystemShutdown;
-        
-        let _ = client.send_message_async(low_msg, MessagePriority::Low).await;
-        let _ = client.send_message_async(high_msg, MessagePriority::Critical).await;
-        
+
+        let _ = client
+            .send_message_async(low_msg, MessagePriority::Low)
+            .await;
+        let _ = client
+            .send_message_async(high_msg, MessagePriority::Critical)
+            .await;
+
         // Verify high priority message is first
         let queue = client.message_queue.read();
         assert_eq!(queue.len(), 2);
@@ -837,7 +869,7 @@ mod tests {
     #[tokio::test]
     async fn test_agent_registration() {
         let client = McpClient::new();
-        
+
         let agent = AgentState {
             agent_id: "test_agent".to_string(),
             agent_type: "processor".to_string(),
@@ -858,7 +890,7 @@ mod tests {
     #[tokio::test]
     async fn test_task_assignment() {
         let client = McpClient::new();
-        
+
         let agent = AgentState {
             agent_id: "worker_agent".to_string(),
             agent_type: "worker".to_string(),
@@ -870,7 +902,7 @@ mod tests {
         };
 
         client.register_agent(agent).await.unwrap();
-        
+
         let task_id = Uuid::new_v4();
         let result = client.assign_task("worker_agent", task_id).await;
         assert!(result.is_ok());

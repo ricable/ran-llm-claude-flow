@@ -5,19 +5,18 @@ Machine Learning integration module for Rust-Python hybrid pipeline.
 Provides dynamic model selection and workload analysis for Qwen3 variants.
 */
 
-pub mod model_selector;
-pub mod workload_analyzer;
-pub mod performance_benchmark;
 pub mod memory_predictor;
+pub mod model_selector;
+pub mod performance_benchmark;
+pub mod workload_analyzer;
 
-pub use model_selector::*;
-pub use workload_analyzer::*;
+pub use memory_predictor::{initialize as memory_predictor_initialize, get_statistics as memory_predictor_get_statistics, *};
+pub use model_selector::{initialize as model_selector_initialize, get_statistics as model_selector_get_statistics, *};
 pub use performance_benchmark::*;
-pub use memory_predictor::*;
+pub use workload_analyzer::{initialize as workload_analyzer_initialize, get_statistics as workload_analyzer_get_statistics, *};
 
-use crate::{Result, PipelineError};
+use crate::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::time::Duration;
 use std::time::SystemTime;
 use uuid::Uuid;
@@ -149,7 +148,7 @@ impl Qwen3Model {
     pub fn name(&self) -> &'static str {
         match self {
             Qwen3Model::Qwen3_1_7B => "qwen3-1.7b",
-            Qwen3Model::Qwen3_7B => "qwen3-7b", 
+            Qwen3Model::Qwen3_7B => "qwen3-7b",
             Qwen3Model::Qwen3_30B => "qwen3-30b",
         }
     }
@@ -207,19 +206,19 @@ impl Default for ModelMetrics {
 /// Initialize ML module
 pub async fn initialize_ml_module() -> Result<()> {
     tracing::info!("Initializing ML module with dynamic model selection");
-    
+
     // Initialize model selector
     model_selector::initialize().await?;
-    
+
     // Initialize workload analyzer
     workload_analyzer::initialize().await?;
-    
+
     // Initialize performance benchmark
     performance_benchmark::initialize().await?;
-    
+
     // Initialize memory predictor
     memory_predictor::initialize().await?;
-    
+
     tracing::info!("ML module initialization complete");
     Ok(())
 }
@@ -227,24 +226,27 @@ pub async fn initialize_ml_module() -> Result<()> {
 /// Process ML request with dynamic model selection
 pub async fn process_request(request: MLRequest) -> Result<MLResponse> {
     let start_time = SystemTime::now();
-    
+
     tracing::debug!("Processing ML request: {:?}", request.request_id);
-    
+
     // Analyze workload to determine optimal model
     let workload = workload_analyzer::analyze(&request).await?;
-    
+
     // Select optimal model based on workload analysis
     let selected_model = model_selector::select_model(&request, &workload).await?;
-    
-    tracing::info!("Selected model {} for request {}",
-                  selected_model.name(), request.request_id);
-    
+
+    tracing::info!(
+        "Selected model {} for request {}",
+        selected_model.name(),
+        request.request_id
+    );
+
     // Process request with selected model
     let response = execute_ml_processing(request, selected_model, start_time).await?;
-    
+
     // Update model metrics
     model_selector::update_metrics(&response).await?;
-    
+
     Ok(response)
 }
 
@@ -252,24 +254,24 @@ pub async fn process_request(request: MLRequest) -> Result<MLResponse> {
 async fn execute_ml_processing(
     request: MLRequest,
     model: Qwen3Model,
-    start_time: SystemTime
+    start_time: SystemTime,
 ) -> Result<MLResponse> {
     // Simulate ML processing (in real implementation, this would call Python workers)
     let processing_time = Duration::from_millis(100);
     tokio::time::sleep(processing_time).await;
-    
+
     let specs = model.specs();
     let quality_score = specs.quality_score + (rand::random::<f64>() - 0.5) * 0.1;
     let quality_score = quality_score.max(0.0).min(1.0);
-    
+
     let status = if quality_score >= request.quality_requirements.min_score {
         ProcessingStatus::Success
     } else {
         ProcessingStatus::QualityFailure
     };
-    
+
     let elapsed = start_time.elapsed().unwrap_or(Duration::from_secs(0));
-    
+
     Ok(MLResponse {
         request_id: request.request_id,
         model_used: model,

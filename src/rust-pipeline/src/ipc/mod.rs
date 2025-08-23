@@ -5,11 +5,11 @@ High-performance IPC between Rust core and Python ML workers.
 Optimized for M3 Max unified memory architecture.
 */
 
-pub mod shared_memory;
 pub mod message_queue;
 pub mod process_manager;
+pub mod shared_memory;
 
-use crate::{Result, PipelineError, PipelineConfig};
+use crate::{PipelineConfig, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -31,7 +31,7 @@ pub enum IpcMessage {
         result: ProcessingResult,
         performance_metrics: ProcessingMetrics,
     },
-    
+
     // Model management messages
     ModelLoad {
         model_id: String,
@@ -52,7 +52,7 @@ pub enum IpcMessage {
         model_id: String,
         result: InferenceResult,
     },
-    
+
     // Quality validation messages
     QualityCheck {
         content_id: Uuid,
@@ -64,7 +64,7 @@ pub enum IpcMessage {
         quality_score: f64,
         quality_details: QualityDetails,
     },
-    
+
     // System control messages
     WorkerHeartbeat {
         worker_id: String,
@@ -73,7 +73,7 @@ pub enum IpcMessage {
         metrics: WorkerMetrics,
     },
     SystemShutdown,
-    
+
     // Error handling
     Error {
         code: u32,
@@ -84,7 +84,7 @@ pub enum IpcMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DocumentFormat {
     Pdf,
-    Html, 
+    Html,
     Markdown,
     PlainText,
     Csv,
@@ -250,18 +250,17 @@ impl IpcManager {
     pub async fn new(config: &PipelineConfig) -> Result<Self> {
         let shared_memory = Arc::new(
             shared_memory::SharedMemoryManager::new(
-                (config.m3_max.memory_pools.ipc * 1024 * 1024 * 1024) as usize  // Convert GB to bytes
-            ).await?
+                (config.m3_max.memory_pools.ipc * 1024 * 1024 * 1024) as usize, // Convert GB to bytes
+            )
+            .await?,
         );
-        
-        let message_queue = Arc::new(
-            message_queue::MessageQueue::new().await?
-        );
-        
-        let process_manager = Arc::new(
-            Mutex::new(process_manager::ProcessManager::new(config).await?)
-        );
-        
+
+        let message_queue = Arc::new(message_queue::MessageQueue::new().await?);
+
+        let process_manager = Arc::new(Mutex::new(
+            process_manager::ProcessManager::new(config).await?,
+        ));
+
         Ok(Self {
             shared_memory,
             message_queue,
@@ -269,73 +268,79 @@ impl IpcManager {
             active_workers: Arc::new(RwLock::new(HashMap::new())),
         })
     }
-    
+
     /// Start Python ML workers
     pub async fn start_python_workers(&self, worker_count: u8) -> Result<Vec<String>> {
         let mut process_manager = self.process_manager.lock().await;
         let worker_ids = process_manager.start_python_workers(worker_count).await?;
-        
+
         // Wait for workers to initialize and register
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        
+
         Ok(worker_ids)
     }
-    
+
     /// Send message to specific worker
     pub async fn send_to_worker(&self, worker_id: &str, message: IpcMessage) -> Result<()> {
         self.message_queue.send_to_worker(worker_id, message).await
     }
-    
+
     /// Send message to all workers
     pub async fn broadcast_to_workers(&self, message: IpcMessage) -> Result<()> {
         self.message_queue.broadcast(message).await
     }
-    
+
     /// Receive message from workers
     pub async fn receive_message(&self) -> Result<(String, IpcMessage)> {
         self.message_queue.receive().await
     }
-    
+
     /// Register worker
     pub async fn register_worker(&self, worker_id: String, worker_info: WorkerInfo) -> Result<()> {
         let mut workers = self.active_workers.write().await;
         workers.insert(worker_id, worker_info);
         Ok(())
     }
-    
+
     /// Update worker heartbeat
-    pub async fn update_worker_heartbeat(&self, worker_id: &str, status: WorkerStatus, metrics: WorkerMetrics) -> Result<()> {
+    pub async fn update_worker_heartbeat(
+        &self,
+        worker_id: &str,
+        status: WorkerStatus,
+        metrics: WorkerMetrics,
+    ) -> Result<()> {
         let mut workers = self.active_workers.write().await;
-        
+
         if let Some(worker) = workers.get_mut(worker_id) {
             worker.status = status;
             worker.metrics = metrics;
             worker.last_heartbeat = chrono::Utc::now();
         }
-        
+
         Ok(())
     }
-    
+
     /// Get active workers
     pub async fn get_active_workers(&self) -> HashMap<String, WorkerInfo> {
         self.active_workers.read().await.clone()
     }
-    
+
     /// Shutdown all workers
     pub async fn shutdown_workers(&self) -> Result<()> {
         // Send shutdown message to all workers
-        self.broadcast_to_workers(IpcMessage::SystemShutdown).await?;
-        
+        self.broadcast_to_workers(IpcMessage::SystemShutdown)
+            .await?;
+
         // Wait for graceful shutdown
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        
+
         // Force cleanup if needed
         let mut process_manager = self.process_manager.lock().await;
         process_manager.cleanup_all().await?;
-        
+
         Ok(())
     }
-    
+
     /// Get IPC performance metrics
     pub async fn get_metrics(&self) -> IpcMetrics {
         IpcMetrics {
@@ -358,10 +363,10 @@ pub struct IpcMetrics {
 /// Initialize IPC system
 pub async fn initialize(config: &PipelineConfig) -> Result<()> {
     tracing::info!("Initializing IPC system for M3 Max optimization");
-    
+
     // Create global IPC manager instance
     let _ipc_manager = IpcManager::new(config).await?;
-    
+
     tracing::info!("IPC system initialized successfully");
     Ok(())
 }
@@ -369,10 +374,10 @@ pub async fn initialize(config: &PipelineConfig) -> Result<()> {
 /// Cleanup IPC resources
 pub async fn cleanup() -> Result<()> {
     tracing::info!("Cleaning up IPC resources");
-    
+
     // This would cleanup the global IPC manager instance
     // For now, just log the cleanup
-    
+
     tracing::info!("IPC cleanup completed");
     Ok(())
 }

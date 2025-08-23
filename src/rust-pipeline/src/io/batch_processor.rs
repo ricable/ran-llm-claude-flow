@@ -4,7 +4,7 @@
 Efficient batch processing of multiple documents with M3 Max optimizations.
 */
 
-use crate::{Result, PipelineError};
+use crate::{PipelineError, Result};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -75,9 +75,12 @@ impl BatchProcessor {
     /// Process batch of documents
     pub async fn process_batch(&self, request: BatchRequest) -> Result<BatchResult> {
         let start_time = std::time::SystemTime::now();
-        
-        tracing::info!("Processing batch {} with {} documents", 
-                      request.batch_id, request.documents.len());
+
+        tracing::info!(
+            "Processing batch {} with {} documents",
+            request.batch_id,
+            request.documents.len()
+        );
 
         let mut results = Vec::new();
         let mut processed_count = 0;
@@ -86,20 +89,22 @@ impl BatchProcessor {
         if request.processing_options.parallel_processing {
             // Process documents in parallel
             let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
-                request.processing_options.max_concurrent
+                request.processing_options.max_concurrent,
             ));
 
             let mut tasks = Vec::new();
-            
+
             for document in request.documents {
-                let permit = semaphore.clone().acquire_owned().await
-                    .map_err(|e| PipelineError::Processing(format!("Semaphore error: {}", e)))?;
-                
+                let permit =
+                    semaphore.clone().acquire_owned().await.map_err(|e| {
+                        PipelineError::Processing(format!("Semaphore error: {}", e))
+                    })?;
+
                 let task = tokio::spawn(async move {
                     let _permit = permit;
                     Self::process_single_document(document).await
                 });
-                
+
                 tasks.push(task);
             }
 
@@ -133,7 +138,8 @@ impl BatchProcessor {
             }
         }
 
-        let total_time = start_time.elapsed()
+        let total_time = start_time
+            .elapsed()
             .unwrap_or(std::time::Duration::from_secs(0))
             .as_millis() as u64;
 
@@ -149,11 +155,12 @@ impl BatchProcessor {
     /// Process a single document
     async fn process_single_document(document: DocumentItem) -> DocumentResult {
         let start_time = std::time::SystemTime::now();
-        
+
         // Simulate document processing
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        
-        let processing_time = start_time.elapsed()
+
+        let processing_time = start_time
+            .elapsed()
             .unwrap_or(std::time::Duration::from_secs(0))
             .as_millis() as u64;
 

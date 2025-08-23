@@ -4,7 +4,7 @@
 Document quality validation with configurable thresholds.
 */
 
-use crate::{Result, PipelineError};
+use crate::Result;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -68,15 +68,20 @@ impl QualityValidator {
 
         // Check content length
         if request.content.len() < self.config.min_content_length {
-            issues.push(format!("Content too short: {} characters (minimum: {})", 
-                               request.content.len(), self.config.min_content_length));
+            issues.push(format!(
+                "Content too short: {} characters (minimum: {})",
+                request.content.len(),
+                self.config.min_content_length
+            ));
             is_valid = false;
         }
 
         // Check quality score
         if request.quality_score < self.config.min_quality_score {
-            issues.push(format!("Quality score too low: {:.2} (minimum: {:.2})", 
-                               request.quality_score, self.config.min_quality_score));
+            issues.push(format!(
+                "Quality score too low: {:.2} (minimum: {:.2})",
+                request.quality_score, self.config.min_quality_score
+            ));
             is_valid = false;
         }
 

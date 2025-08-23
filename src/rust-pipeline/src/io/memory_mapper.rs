@@ -4,7 +4,7 @@
 Memory-mapped file operations optimized for M3 Max unified memory.
 */
 
-use crate::{Result, PipelineError};
+use crate::{PipelineError, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
@@ -42,12 +42,16 @@ impl MemoryMapper {
     /// Create memory mapping for file
     pub async fn create_mapping(&self, request: MappingRequest) -> Result<MappingResult> {
         let path = Path::new(&request.file_path);
-        
+
         if !path.exists() {
-            return Err(PipelineError::Io(format!("File not found: {}", request.file_path)));
+            return Err(PipelineError::Io(format!(
+                "File not found: {}",
+                request.file_path
+            )));
         }
 
-        let metadata = tokio::fs::metadata(path).await
+        let metadata = tokio::fs::metadata(path)
+            .await
             .map_err(|e| PipelineError::Io(format!("Failed to read file metadata: {}", e)))?;
 
         let file_size = metadata.len() as usize;
@@ -60,12 +64,15 @@ impl MemoryMapper {
             )));
         }
 
-        tracing::info!("Creating memory mapping for {} (size: {} bytes)", 
-                      request.file_path, mapped_size);
+        tracing::info!(
+            "Creating memory mapping for {} (size: {} bytes)",
+            request.file_path,
+            mapped_size
+        );
 
         // In a real implementation, this would create actual memory mapping
         // For now, we simulate the operation
-        
+
         Ok(MappingResult {
             mapping_id: Uuid::new_v4(),
             file_path: request.file_path,
@@ -75,9 +82,18 @@ impl MemoryMapper {
     }
 
     /// Read data from memory mapping
-    pub async fn read_mapping(&self, mapping_id: Uuid, offset: usize, length: usize) -> Result<Vec<u8>> {
-        tracing::debug!("Reading {} bytes from mapping {} at offset {}", 
-                       length, mapping_id, offset);
+    pub async fn read_mapping(
+        &self,
+        mapping_id: Uuid,
+        offset: usize,
+        length: usize,
+    ) -> Result<Vec<u8>> {
+        tracing::debug!(
+            "Reading {} bytes from mapping {} at offset {}",
+            length,
+            mapping_id,
+            offset
+        );
 
         // Simulate reading from memory mapping
         // In a real implementation, this would read from the actual mapped memory
@@ -86,8 +102,12 @@ impl MemoryMapper {
 
     /// Write data to memory mapping (if writable)
     pub async fn write_mapping(&self, mapping_id: Uuid, offset: usize, data: &[u8]) -> Result<()> {
-        tracing::debug!("Writing {} bytes to mapping {} at offset {}", 
-                       data.len(), mapping_id, offset);
+        tracing::debug!(
+            "Writing {} bytes to mapping {} at offset {}",
+            data.len(),
+            mapping_id,
+            offset
+        );
 
         // Simulate writing to memory mapping
         // In a real implementation, this would write to the actual mapped memory

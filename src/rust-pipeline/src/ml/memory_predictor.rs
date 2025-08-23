@@ -5,16 +5,16 @@ Advanced memory prediction system optimized for M3 Max unified memory architectu
 Predicts memory usage patterns, bottlenecks, and optimal allocation strategies.
 */
 
-use crate::ml::{MLRequest, Qwen3Model, DocumentType, Priority};
-use crate::optimization::m3_max::{M3MaxMemoryManager, MemoryStats, PoolType, OptimizationFlags};
-use crate::{Result, PipelineError};
+use crate::ml::{DocumentType, MLRequest, Priority, Qwen3Model};
+use crate::optimization::m3_max::{M3MaxMemoryManager, MemoryStats};
+use crate::{PipelineError, Result};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use parking_lot::{Mutex, RwLock};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Memory prediction result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,72 +131,98 @@ impl MemoryPredictor {
     /// Create new memory predictor
     pub fn new() -> Self {
         let mut model_profiles = HashMap::new();
-        
+
         // Qwen3 1.7B profile
-        model_profiles.insert(Qwen3Model::Qwen3_1_7B, ModelMemoryProfile {
-            base_model_size_gb: 3.4,  // FP16 weights
-            context_window_memory_ratio: 0.1,
-            activation_memory_ratio: 0.15,
-            kv_cache_ratio: 0.05,
-            gradient_memory_ratio: 0.3,  // During training/fine-tuning
-            optimizer_memory_ratio: 0.2, // Adam states
-        });
-        
+        model_profiles.insert(
+            Qwen3Model::Qwen3_1_7B,
+            ModelMemoryProfile {
+                base_model_size_gb: 3.4, // FP16 weights
+                context_window_memory_ratio: 0.1,
+                activation_memory_ratio: 0.15,
+                kv_cache_ratio: 0.05,
+                gradient_memory_ratio: 0.3,  // During training/fine-tuning
+                optimizer_memory_ratio: 0.2, // Adam states
+            },
+        );
+
         // Qwen3 7B profile
-        model_profiles.insert(Qwen3Model::Qwen3_7B, ModelMemoryProfile {
-            base_model_size_gb: 14.0,
-            context_window_memory_ratio: 0.12,
-            activation_memory_ratio: 0.18,
-            kv_cache_ratio: 0.08,
-            gradient_memory_ratio: 0.35,
-            optimizer_memory_ratio: 0.25,
-        });
-        
-        // Qwen3 30B profile  
-        model_profiles.insert(Qwen3Model::Qwen3_30B, ModelMemoryProfile {
-            base_model_size_gb: 60.0,
-            context_window_memory_ratio: 0.15,
-            activation_memory_ratio: 0.2,
-            kv_cache_ratio: 0.12,
-            gradient_memory_ratio: 0.4,
-            optimizer_memory_ratio: 0.3,
-        });
+        model_profiles.insert(
+            Qwen3Model::Qwen3_7B,
+            ModelMemoryProfile {
+                base_model_size_gb: 14.0,
+                context_window_memory_ratio: 0.12,
+                activation_memory_ratio: 0.18,
+                kv_cache_ratio: 0.08,
+                gradient_memory_ratio: 0.35,
+                optimizer_memory_ratio: 0.25,
+            },
+        );
+
+        // Qwen3 30B profile
+        model_profiles.insert(
+            Qwen3Model::Qwen3_30B,
+            ModelMemoryProfile {
+                base_model_size_gb: 60.0,
+                context_window_memory_ratio: 0.15,
+                activation_memory_ratio: 0.2,
+                kv_cache_ratio: 0.12,
+                gradient_memory_ratio: 0.4,
+                optimizer_memory_ratio: 0.3,
+            },
+        );
 
         let mut document_profiles = HashMap::new();
-        
-        document_profiles.insert(DocumentType::PlainText, DocumentMemoryProfile {
-            base_memory_multiplier: 1.0,
-            peak_memory_multiplier: 1.2,
-            gradient_memory_ratio: 0.8,
-            cache_efficiency: 0.9,
-            fragmentation_tendency: 0.1,
-        });
-        
-        document_profiles.insert(DocumentType::Pdf, DocumentMemoryProfile {
-            base_memory_multiplier: 1.5,
-            peak_memory_multiplier: 2.0,
-            gradient_memory_ratio: 1.2,
-            cache_efficiency: 0.7,
-            fragmentation_tendency: 0.3,
-        });
-        
-        document_profiles.insert(DocumentType::Technical, DocumentMemoryProfile {
-            base_memory_multiplier: 1.3,
-            peak_memory_multiplier: 1.8,
-            gradient_memory_ratio: 1.1,
-            cache_efficiency: 0.8,
-            fragmentation_tendency: 0.2,
-        });
+
+        document_profiles.insert(
+            DocumentType::PlainText,
+            DocumentMemoryProfile {
+                base_memory_multiplier: 1.0,
+                peak_memory_multiplier: 1.2,
+                gradient_memory_ratio: 0.8,
+                cache_efficiency: 0.9,
+                fragmentation_tendency: 0.1,
+            },
+        );
+
+        document_profiles.insert(
+            DocumentType::Pdf,
+            DocumentMemoryProfile {
+                base_memory_multiplier: 1.5,
+                peak_memory_multiplier: 2.0,
+                gradient_memory_ratio: 1.2,
+                cache_efficiency: 0.7,
+                fragmentation_tendency: 0.3,
+            },
+        );
+
+        document_profiles.insert(
+            DocumentType::Technical,
+            DocumentMemoryProfile {
+                base_memory_multiplier: 1.3,
+                peak_memory_multiplier: 1.8,
+                gradient_memory_ratio: 1.1,
+                cache_efficiency: 0.8,
+                fragmentation_tendency: 0.2,
+            },
+        );
 
         // Add profiles for other document types
-        for doc_type in [DocumentType::Markdown, DocumentType::Csv, DocumentType::Standards3Gpp, DocumentType::EricssonDoc] {
-            document_profiles.insert(doc_type, DocumentMemoryProfile {
-                base_memory_multiplier: 1.1,
-                peak_memory_multiplier: 1.5,
-                gradient_memory_ratio: 0.9,
-                cache_efficiency: 0.8,
-                fragmentation_tendency: 0.15,
-            });
+        for doc_type in [
+            DocumentType::Markdown,
+            DocumentType::Csv,
+            DocumentType::Standards3Gpp,
+            DocumentType::EricssonDoc,
+        ] {
+            document_profiles.insert(
+                doc_type,
+                DocumentMemoryProfile {
+                    base_memory_multiplier: 1.1,
+                    peak_memory_multiplier: 1.5,
+                    gradient_memory_ratio: 0.9,
+                    cache_efficiency: 0.8,
+                    fragmentation_tendency: 0.15,
+                },
+            );
         }
 
         Self {
@@ -224,8 +250,11 @@ impl MemoryPredictor {
         self.total_predictions.fetch_add(1, Ordering::Relaxed);
         let start_time = Instant::now();
 
-        debug!("Predicting memory usage for model {} and request {}", 
-               model.name(), request.request_id);
+        debug!(
+            "Predicting memory usage for model {} and request {}",
+            model.name(),
+            request.request_id
+        );
 
         // Check prediction cache
         let cache_key = self.generate_cache_key(model, request);
@@ -235,54 +264,56 @@ impl MemoryPredictor {
         }
 
         // Get model and document profiles
-        let model_profile = self.model_profiles.get(model)
-            .ok_or_else(|| PipelineError::Optimization(format!("No memory profile for model {}", model.name())))?;
-        
-        let doc_profile = self.document_profiles.get(&request.document_type)
-            .ok_or_else(|| PipelineError::Optimization(format!("No memory profile for document type {:?}", request.document_type)))?;
+        let model_profile = self.model_profiles.get(model).ok_or_else(|| {
+            PipelineError::Optimization(format!("No memory profile for model {}", model.name()))
+        })?;
+
+        let doc_profile = self
+            .document_profiles
+            .get(&request.document_type)
+            .ok_or_else(|| {
+                PipelineError::Optimization(format!(
+                    "No memory profile for document type {:?}",
+                    request.document_type
+                ))
+            })?;
 
         // Calculate allocation pattern
-        let allocation_pattern = self.calculate_allocation_pattern(
-            model_profile, 
-            doc_profile, 
-            request
-        ).await?;
+        let allocation_pattern = self
+            .calculate_allocation_pattern(model_profile, doc_profile, request)
+            .await?;
 
         // Predict usage and peak
         let predicted_usage_gb = self.calculate_predicted_usage(&allocation_pattern);
         let peak_usage_gb = self.calculate_peak_usage(&allocation_pattern, doc_profile);
 
         // Analyze fragmentation risk
-        let fragmentation_risk = self.calculate_fragmentation_risk(
-            model, 
-            &allocation_pattern, 
-            doc_profile
-        ).await?;
+        let fragmentation_risk = self
+            .calculate_fragmentation_risk(model, &allocation_pattern, doc_profile)
+            .await?;
 
         // Calculate GC pressure
         let gc_pressure = self.calculate_gc_pressure(&allocation_pattern, request);
 
         // Estimate bandwidth utilization
-        let bandwidth_utilization = self.estimate_bandwidth_utilization(
-            model, 
-            &allocation_pattern,
-            request
-        ).await?;
+        let bandwidth_utilization = self
+            .estimate_bandwidth_utilization(model, &allocation_pattern, request)
+            .await?;
 
         // Generate pool recommendations
-        let pool_recommendations = self.generate_pool_recommendations(
-            model,
-            &allocation_pattern,
-            predicted_usage_gb
-        ).await?;
+        let pool_recommendations = self
+            .generate_pool_recommendations(model, &allocation_pattern, predicted_usage_gb)
+            .await?;
 
         // Generate optimization suggestions
-        let optimization_suggestions = self.generate_optimization_suggestions(
-            model,
-            &allocation_pattern,
-            fragmentation_risk,
-            gc_pressure
-        ).await;
+        let optimization_suggestions = self
+            .generate_optimization_suggestions(
+                model,
+                &allocation_pattern,
+                fragmentation_risk,
+                gc_pressure,
+            )
+            .await;
 
         let prediction = MemoryPrediction {
             model: model.clone(),
@@ -342,7 +373,9 @@ impl MemoryPredictor {
             bottlenecks.push(BottleneckAnalysis {
                 bottleneck_type: BottleneckType::BandwidthLimited,
                 severity: prediction.bandwidth_utilization,
-                estimated_impact: Duration::from_millis((prediction.bandwidth_utilization * 1000.0) as u64),
+                estimated_impact: Duration::from_millis(
+                    (prediction.bandwidth_utilization * 1000.0) as u64,
+                ),
                 mitigation_strategies: vec![
                     "Optimize data layout for better cache locality".to_string(),
                     "Use memory pooling to reduce allocation overhead".to_string(),
@@ -356,7 +389,9 @@ impl MemoryPredictor {
             bottlenecks.push(BottleneckAnalysis {
                 bottleneck_type: BottleneckType::FragmentationHigh,
                 severity: prediction.fragmentation_risk,
-                estimated_impact: Duration::from_millis((prediction.fragmentation_risk * 500.0) as u64),
+                estimated_impact: Duration::from_millis(
+                    (prediction.fragmentation_risk * 500.0) as u64,
+                ),
                 mitigation_strategies: vec![
                     "Use larger allocation chunks".to_string(),
                     "Implement memory compaction".to_string(),
@@ -404,7 +439,8 @@ impl MemoryPredictor {
 
         // Working set memory (activations, attention states)
         let context_size_factor = (request.document_size_bytes as f64 / 10000.0).min(10.0); // Normalize
-        let working_set_gb = initial_load_gb * model_profile.activation_memory_ratio * context_size_factor;
+        let working_set_gb =
+            initial_load_gb * model_profile.activation_memory_ratio * context_size_factor;
 
         // Peak temporary memory (forward/backward passes)
         let peak_temporary_gb = working_set_gb * doc_profile.peak_memory_multiplier;
@@ -412,13 +448,16 @@ impl MemoryPredictor {
         // Gradient memory (if fine-tuning or training)
         let gradient_memory_gb = if matches!(request.priority, Priority::Critical) {
             // Assume critical requests might involve model adaptation
-            initial_load_gb * model_profile.gradient_memory_ratio * doc_profile.gradient_memory_ratio
+            initial_load_gb
+                * model_profile.gradient_memory_ratio
+                * doc_profile.gradient_memory_ratio
         } else {
             0.0
         };
 
         // Cache memory (KV cache, intermediate results)
-        let cache_memory_gb = initial_load_gb * model_profile.kv_cache_ratio * doc_profile.cache_efficiency;
+        let cache_memory_gb =
+            initial_load_gb * model_profile.kv_cache_ratio * doc_profile.cache_efficiency;
 
         // System overhead (Python runtime, CUDA contexts, etc.)
         let overhead_gb = (initial_load_gb + working_set_gb) * 0.15; // 15% overhead
@@ -435,15 +474,19 @@ impl MemoryPredictor {
 
     /// Calculate predicted total usage
     fn calculate_predicted_usage(&self, pattern: &AllocationPattern) -> f64 {
-        pattern.initial_load_gb + 
-        pattern.working_set_gb + 
-        pattern.cache_memory_gb + 
-        pattern.overhead_gb +
-        pattern.gradient_memory_gb * 0.5 // Gradient memory not always fully allocated
+        pattern.initial_load_gb
+            + pattern.working_set_gb
+            + pattern.cache_memory_gb
+            + pattern.overhead_gb
+            + pattern.gradient_memory_gb * 0.5 // Gradient memory not always fully allocated
     }
 
     /// Calculate peak usage during processing
-    fn calculate_peak_usage(&self, pattern: &AllocationPattern, doc_profile: &DocumentMemoryProfile) -> f64 {
+    fn calculate_peak_usage(
+        &self,
+        pattern: &AllocationPattern,
+        doc_profile: &DocumentMemoryProfile,
+    ) -> f64 {
         let base_usage = self.calculate_predicted_usage(pattern);
         base_usage + pattern.peak_temporary_gb * doc_profile.peak_memory_multiplier
     }
@@ -467,7 +510,8 @@ impl MemoryPredictor {
         fragmentation_risk += model_factor;
 
         // Allocation pattern impact
-        let allocation_variance = (pattern.peak_temporary_gb - pattern.working_set_gb) / pattern.working_set_gb.max(1.0);
+        let allocation_variance =
+            (pattern.peak_temporary_gb - pattern.working_set_gb) / pattern.working_set_gb.max(1.0);
         fragmentation_risk += allocation_variance * 0.3;
 
         // Historical data adjustment
@@ -503,24 +547,24 @@ impl MemoryPredictor {
         request: &MLRequest,
     ) -> Result<f64> {
         let total_memory_gb = self.calculate_predicted_usage(pattern);
-        
+
         // M3 Max unified memory bandwidth: ~400 GB/s
         let max_bandwidth_gbps = 400.0;
-        
+
         // Estimate memory access patterns
         let model_specs = model.specs();
         let tokens_per_second = model_specs.tokens_per_second as f64;
-        
+
         // Rough estimate of memory bandwidth needed
         // Each token requires multiple memory accesses for weights, activations, etc.
         let memory_accesses_per_token = total_memory_gb * 0.1; // Conservative estimate
         let required_bandwidth = tokens_per_second * memory_accesses_per_token;
-        
+
         let utilization = (required_bandwidth / max_bandwidth_gbps).min(1.0);
-        
+
         // Adjust for document complexity
         let complexity_multiplier = 1.0 + request.complexity_score * 0.5;
-        
+
         Ok((utilization * complexity_multiplier).min(1.0))
     }
 
@@ -591,11 +635,13 @@ impl MemoryPredictor {
         // Model-specific suggestions
         match model {
             Qwen3Model::Qwen3_1_7B => {
-                suggestions.push("Enable Neural Engine acceleration for faster inference".to_string());
+                suggestions
+                    .push("Enable Neural Engine acceleration for faster inference".to_string());
                 suggestions.push("Use int8 quantization to reduce memory usage".to_string());
             }
             Qwen3Model::Qwen3_7B => {
-                suggestions.push("Balance CPU and GPU utilization for optimal performance".to_string());
+                suggestions
+                    .push("Balance CPU and GPU utilization for optimal performance".to_string());
                 suggestions.push("Consider dynamic batching for multiple requests".to_string());
             }
             Qwen3Model::Qwen3_30B => {
@@ -621,20 +667,24 @@ impl MemoryPredictor {
         }
 
         // M3 Max specific suggestions
-        suggestions.push("Leverage unified memory architecture for zero-copy operations".to_string());
-        suggestions.push("Enable Metal Performance Shaders for compute-heavy operations".to_string());
+        suggestions
+            .push("Leverage unified memory architecture for zero-copy operations".to_string());
+        suggestions
+            .push("Enable Metal Performance Shaders for compute-heavy operations".to_string());
 
         suggestions
     }
 
     /// Generate cache key for prediction
     fn generate_cache_key(&self, model: &Qwen3Model, request: &MLRequest) -> String {
-        format!("{}:{}:{}:{:.1}:{}", 
-                model.name(),
-                request.document_type as u8,
-                request.document_size_bytes / 1024, // KB granularity
-                request.complexity_score,
-                request.priority as u8)
+        format!(
+            "{}:{}:{}:{:.1}:{}",
+            model.name(),
+            request.document_type as u8,
+            request.document_size_bytes / 1024, // KB granularity
+            request.complexity_score,
+            request.priority as u8
+        )
     }
 
     /// Check prediction cache
@@ -653,7 +703,7 @@ impl MemoryPredictor {
     async fn cache_prediction(&self, key: String, prediction: MemoryPrediction) {
         let mut cache = self.prediction_cache.write();
         cache.insert(key, (prediction, Instant::now()));
-        
+
         // Limit cache size
         if cache.len() > 500 {
             // Remove oldest entries
@@ -705,49 +755,58 @@ pub struct MemoryPredictorStats {
 /// Initialize memory predictor
 pub async fn initialize() -> Result<()> {
     info!("Initializing Memory Predictor for Qwen3 models");
-    
+
     let predictor = MemoryPredictor::new();
-    
-    MEMORY_PREDICTOR.set(Arc::new(predictor))
-        .map_err(|_| PipelineError::Optimization("Failed to initialize memory predictor".to_string()))?;
-    
+
+    MEMORY_PREDICTOR.set(Arc::new(predictor)).map_err(|_| {
+        PipelineError::Optimization("Failed to initialize memory predictor".to_string())
+    })?;
+
     info!("Memory Predictor initialized successfully");
     Ok(())
 }
 
 /// Predict memory usage for model and request
-pub async fn predict_memory_usage(model: &Qwen3Model, request: &MLRequest) -> Result<MemoryPrediction> {
-    let predictor = MEMORY_PREDICTOR.get()
-        .ok_or_else(|| PipelineError::Optimization("Memory predictor not initialized".to_string()))?;
-    
+pub async fn predict_memory_usage(
+    model: &Qwen3Model,
+    request: &MLRequest,
+) -> Result<MemoryPrediction> {
+    let predictor = MEMORY_PREDICTOR.get().ok_or_else(|| {
+        PipelineError::Optimization("Memory predictor not initialized".to_string())
+    })?;
+
     predictor.predict_memory_usage(model, request).await
 }
 
 /// Analyze memory bottlenecks
 pub async fn analyze_bottlenecks(
-    model: &Qwen3Model, 
+    model: &Qwen3Model,
     request: &MLRequest,
-    current_memory_state: Option<&MemoryStats>
+    current_memory_state: Option<&MemoryStats>,
 ) -> Result<Vec<BottleneckAnalysis>> {
-    let predictor = MEMORY_PREDICTOR.get()
-        .ok_or_else(|| PipelineError::Optimization("Memory predictor not initialized".to_string()))?;
-    
-    predictor.analyze_bottlenecks(model, request, current_memory_state).await
+    let predictor = MEMORY_PREDICTOR.get().ok_or_else(|| {
+        PipelineError::Optimization("Memory predictor not initialized".to_string())
+    })?;
+
+    predictor
+        .analyze_bottlenecks(model, request, current_memory_state)
+        .await
 }
 
 /// Get memory predictor statistics
 pub async fn get_statistics() -> Result<MemoryPredictorStats> {
-    let predictor = MEMORY_PREDICTOR.get()
-        .ok_or_else(|| PipelineError::Optimization("Memory predictor not initialized".to_string()))?;
-    
+    let predictor = MEMORY_PREDICTOR.get().ok_or_else(|| {
+        PipelineError::Optimization("Memory predictor not initialized".to_string())
+    })?;
+
     predictor.get_statistics().await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
     use crate::ml::QualityRequirements;
+    use uuid::Uuid;
 
     #[tokio::test]
     async fn test_memory_predictor_initialization() {
@@ -759,7 +818,7 @@ mod tests {
     #[tokio::test]
     async fn test_memory_prediction() {
         initialize().await.unwrap();
-        
+
         let request = MLRequest {
             request_id: Uuid::new_v4(),
             document_type: DocumentType::Technical,
@@ -775,8 +834,10 @@ mod tests {
             processing_deadline: Some(Duration::from_secs(120)),
         };
 
-        let prediction = predict_memory_usage(&Qwen3Model::Qwen3_7B, &request).await.unwrap();
-        
+        let prediction = predict_memory_usage(&Qwen3Model::Qwen3_7B, &request)
+            .await
+            .unwrap();
+
         assert!(prediction.predicted_usage_gb > 0.0);
         assert!(prediction.peak_usage_gb >= prediction.predicted_usage_gb);
         assert!(prediction.fragmentation_risk >= 0.0 && prediction.fragmentation_risk <= 1.0);
@@ -789,7 +850,7 @@ mod tests {
     #[tokio::test]
     async fn test_bottleneck_analysis() {
         initialize().await.unwrap();
-        
+
         let request = MLRequest {
             request_id: Uuid::new_v4(),
             document_type: DocumentType::Pdf,
@@ -805,8 +866,10 @@ mod tests {
             processing_deadline: Some(Duration::from_secs(60)),
         };
 
-        let bottlenecks = analyze_bottlenecks(&Qwen3Model::Qwen3_30B, &request, None).await.unwrap();
-        
+        let bottlenecks = analyze_bottlenecks(&Qwen3Model::Qwen3_30B, &request, None)
+            .await
+            .unwrap();
+
         assert!(!bottlenecks.is_empty());
         for bottleneck in bottlenecks {
             assert!(bottleneck.severity >= 0.0 && bottleneck.severity <= 1.0);

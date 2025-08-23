@@ -4,7 +4,7 @@
 Real-time performance monitoring for the document processing pipeline.
 */
 
-use crate::{Result, PipelineError};
+use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -59,34 +59,49 @@ impl PerformanceMonitor {
 
     /// Record document processing
     pub fn record_document_processed(&self, processing_time_ms: u64) {
-        self.metrics.documents_processed.fetch_add(1, Ordering::Relaxed);
-        self.metrics.total_processing_time_ms.fetch_add(processing_time_ms, Ordering::Relaxed);
+        self.metrics
+            .documents_processed
+            .fetch_add(1, Ordering::Relaxed);
+        self.metrics
+            .total_processing_time_ms
+            .fetch_add(processing_time_ms, Ordering::Relaxed);
     }
 
     /// Record error
     pub fn record_error(&self) {
-        self.metrics.errors_encountered.fetch_add(1, Ordering::Relaxed);
+        self.metrics
+            .errors_encountered
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     /// Update memory usage
     pub fn update_memory_usage(&self, current_mb: u64) {
-        self.metrics.current_memory_usage_mb.store(current_mb, Ordering::Relaxed);
-        
+        self.metrics
+            .current_memory_usage_mb
+            .store(current_mb, Ordering::Relaxed);
+
         // Update peak if necessary
         let current_peak = self.metrics.peak_memory_usage_mb.load(Ordering::Relaxed);
         if current_mb > current_peak {
-            self.metrics.peak_memory_usage_mb.store(current_mb, Ordering::Relaxed);
+            self.metrics
+                .peak_memory_usage_mb
+                .store(current_mb, Ordering::Relaxed);
         }
     }
 
     /// Get current performance snapshot
     pub fn get_snapshot(&self) -> Result<PerformanceSnapshot> {
-        let uptime = self.start_time.elapsed()
+        let uptime = self
+            .start_time
+            .elapsed()
             .unwrap_or(Duration::from_secs(0))
             .as_secs();
 
         let documents_processed = self.metrics.documents_processed.load(Ordering::Relaxed);
-        let total_processing_time = self.metrics.total_processing_time_ms.load(Ordering::Relaxed);
+        let total_processing_time = self
+            .metrics
+            .total_processing_time_ms
+            .load(Ordering::Relaxed);
         let errors = self.metrics.errors_encountered.load(Ordering::Relaxed);
 
         let documents_per_second = if uptime > 0 {
@@ -123,10 +138,16 @@ impl PerformanceMonitor {
     /// Reset metrics
     pub fn reset(&self) {
         self.metrics.documents_processed.store(0, Ordering::Relaxed);
-        self.metrics.total_processing_time_ms.store(0, Ordering::Relaxed);
+        self.metrics
+            .total_processing_time_ms
+            .store(0, Ordering::Relaxed);
         self.metrics.errors_encountered.store(0, Ordering::Relaxed);
-        self.metrics.peak_memory_usage_mb.store(0, Ordering::Relaxed);
-        self.metrics.current_memory_usage_mb.store(0, Ordering::Relaxed);
+        self.metrics
+            .peak_memory_usage_mb
+            .store(0, Ordering::Relaxed);
+        self.metrics
+            .current_memory_usage_mb
+            .store(0, Ordering::Relaxed);
     }
 }
 

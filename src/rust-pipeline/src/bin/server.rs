@@ -4,9 +4,9 @@
 Main entry point for the hybrid pipeline server optimized for M3 Max hardware.
 */
 
+use ran_document_pipeline::{initialize, PipelineConfig};
 use tokio::signal;
-use tracing::{info, error};
-use ran_document_pipeline::{PipelineConfig, initialize};
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -78,7 +78,10 @@ async fn load_config() -> Result<PipelineConfig, Box<dyn std::error::Error>> {
 fn log_config_summary(config: &PipelineConfig) {
     info!("📊 Configuration Summary:");
     info!("  M3 Max Memory Allocation:");
-    info!("    • Processing: {}GB", config.m3_max.memory_pools.processing);
+    info!(
+        "    • Processing: {}GB",
+        config.m3_max.memory_pools.processing
+    );
     info!("    • IPC: {}GB", config.m3_max.memory_pools.ipc);
     info!("    • Cache: {}GB", config.m3_max.memory_pools.cache);
     info!("  Configuration loaded successfully");
@@ -87,7 +90,7 @@ fn log_config_summary(config: &PipelineConfig) {
 async fn setup_shutdown_handler() {
     let mut sigint = signal::unix::signal(signal::unix::SignalKind::interrupt())
         .expect("Failed to create SIGINT handler");
-    
+
     let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())
         .expect("Failed to create SIGTERM handler");
 
@@ -104,32 +107,52 @@ async fn setup_shutdown_handler() {
 // Performance monitoring task
 async fn start_performance_monitor() {
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
-    
+
     loop {
         interval.tick().await;
-        
+
         // Collect M3 Max specific metrics
         let metrics = collect_m3_max_metrics().await;
-        
+
         info!("📈 Performance Metrics:");
-        info!("  • Memory usage: {:.1}% of 128GB", metrics.memory_usage_percent);
-        info!("  • CPU utilization: {:.1}% (P-cores: {:.1}%, E-cores: {:.1}%)", 
-              metrics.cpu_total, metrics.cpu_performance, metrics.cpu_efficiency);
-        info!("  • GPU utilization: {:.1}% of 40 cores", metrics.gpu_utilization);
-        info!("  • Processing throughput: {:.1} docs/hour", metrics.docs_per_hour);
+        info!(
+            "  • Memory usage: {:.1}% of 128GB",
+            metrics.memory_usage_percent
+        );
+        info!(
+            "  • CPU utilization: {:.1}% (P-cores: {:.1}%, E-cores: {:.1}%)",
+            metrics.cpu_total, metrics.cpu_performance, metrics.cpu_efficiency
+        );
+        info!(
+            "  • GPU utilization: {:.1}% of 40 cores",
+            metrics.gpu_utilization
+        );
+        info!(
+            "  • Processing throughput: {:.1} docs/hour",
+            metrics.docs_per_hour
+        );
         info!("  • Quality score: {:.3}", metrics.quality_score);
-        
+
         // Alert on performance issues
         if metrics.memory_usage_percent > 95.0 {
-            error!("⚠️  Memory usage critical: {:.1}%", metrics.memory_usage_percent);
+            error!(
+                "⚠️  Memory usage critical: {:.1}%",
+                metrics.memory_usage_percent
+            );
         }
-        
+
         if metrics.quality_score < 0.742 {
-            error!("⚠️  Quality score below target: {:.3}", metrics.quality_score);
+            error!(
+                "⚠️  Quality score below target: {:.3}",
+                metrics.quality_score
+            );
         }
-        
+
         if metrics.docs_per_hour < 20.0 {
-            error!("⚠️  Throughput below target: {:.1} docs/hour", metrics.docs_per_hour);
+            error!(
+                "⚠️  Throughput below target: {:.1} docs/hour",
+                metrics.docs_per_hour
+            );
         }
     }
 }

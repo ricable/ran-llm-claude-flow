@@ -5,7 +5,7 @@ Comprehensive error handling, circuit breaker patterns, and fault tolerance mech
 for the Model Context Protocol implementation.
 */
 
-use crate::{Result, PipelineError};
+use crate::{PipelineError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -13,15 +13,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
-use tracing::{error, warn, info, debug};
-use uuid::Uuid;
+use tracing::{debug, info, warn};
 
 /// Circuit breaker states
 #[derive(Debug, Clone, PartialEq)]
 pub enum CircuitBreakerState {
-    Closed,    // Normal operation
-    Open,      // Failing, requests rejected
-    HalfOpen,  // Testing if service recovered
+    Closed,   // Normal operation
+    Open,     // Failing, requests rejected
+    HalfOpen, // Testing if service recovered
 }
 
 /// Circuit breaker configuration
@@ -130,7 +129,7 @@ impl CircuitBreaker {
     /// Record successful operation
     async fn record_success(&self) {
         let current_state = self.state.read().await.clone();
-        
+
         match current_state {
             CircuitBreakerState::HalfOpen => {
                 let success_count = self.success_count.fetch_add(1, Ordering::Relaxed) + 1;
@@ -154,10 +153,16 @@ impl CircuitBreaker {
 
         let current_state = self.state.read().await.clone();
 
-        if matches!(current_state, CircuitBreakerState::Closed | CircuitBreakerState::HalfOpen) &&
-           failure_count >= self.config.failure_threshold.into() {
+        if matches!(
+            current_state,
+            CircuitBreakerState::Closed | CircuitBreakerState::HalfOpen
+        ) && failure_count >= self.config.failure_threshold.into()
+        {
             *self.state.write().await = CircuitBreakerState::Open;
-            warn!("Circuit breaker '{}' opened after {} failures", self.name, failure_count);
+            warn!(
+                "Circuit breaker '{}' opened after {} failures",
+                self.name, failure_count
+            );
         }
     }
 
@@ -222,7 +227,9 @@ impl RetryMechanism {
     /// Execute operation with retry
     pub async fn execute<F, T, E>(&self, mut operation: F) -> Result<T>
     where
-        F: FnMut() -> std::pin::Pin<Box<dyn std::future::Future<Output = std::result::Result<T, E>> + Send>>,
+        F: FnMut() -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = std::result::Result<T, E>> + Send>,
+        >,
         E: std::fmt::Display + Send + 'static,
     {
         let mut attempt = 0;
@@ -241,7 +248,10 @@ impl RetryMechanism {
                         )));
                     }
 
-                    warn!("Attempt {} failed: {}. Retrying in {:?}", attempt, error, delay);
+                    warn!(
+                        "Attempt {} failed: {}. Retrying in {:?}",
+                        attempt, error, delay
+                    );
 
                     // Sleep with optional jitter
                     if self.config.jitter {
@@ -253,7 +263,9 @@ impl RetryMechanism {
 
                     // Calculate next delay with exponential backoff
                     delay = std::cmp::min(
-                        Duration::from_millis((delay.as_millis() as f64 * self.config.backoff_factor) as u64),
+                        Duration::from_millis(
+                            (delay.as_millis() as f64 * self.config.backoff_factor) as u64,
+                        ),
                         self.config.max_delay,
                     );
                 }
@@ -360,14 +372,20 @@ impl HealthMonitor {
             success_rate: 0.0,
         };
 
-        self.components.write().await.insert(component_name.clone(), component_health);
-        info!("Registered component for health monitoring: {}", component_name);
+        self.components
+            .write()
+            .await
+            .insert(component_name.clone(), component_health);
+        info!(
+            "Registered component for health monitoring: {}",
+            component_name
+        );
     }
 
     /// Record health check result
     pub async fn record_health_check(&self, result: HealthCheckResult) {
         let mut components = self.components.write().await;
-        
+
         if let Some(component_health) = components.get_mut(&result.component) {
             component_health.last_check = result.timestamp;
             component_health.total_checks += 1;
@@ -389,32 +407,48 @@ impl HealthMonitor {
                     // Update status if unhealthy threshold is met
                     if component_health.consecutive_failures >= self.config.unhealthy_threshold {
                         component_health.status = HealthStatus::Unhealthy;
-                        warn!("Component {} marked as unhealthy after {} consecutive failures", 
-                              result.component, component_health.consecutive_failures);
+                        warn!(
+                            "Component {} marked as unhealthy after {} consecutive failures",
+                            result.component, component_health.consecutive_failures
+                        );
                     }
                 }
                 _ => {}
             }
 
             // Update success rate
-            let success_count = component_health.total_checks - u64::from(component_health.consecutive_failures.min(component_health.total_checks as u32));
-            component_health.success_rate = success_count as f64 / component_health.total_checks as f64;
+            let success_count = component_health.total_checks
+                - u64::from(
+                    component_health
+                        .consecutive_failures
+                        .min(component_health.total_checks as u32),
+                );
+            component_health.success_rate =
+                success_count as f64 / component_health.total_checks as f64;
 
-            debug!("Health check recorded for {}: {:?} (success rate: {:.2}%)", 
-                   result.component, result.status, component_health.success_rate * 100.0);
+            debug!(
+                "Health check recorded for {}: {:?} (success rate: {:.2}%)",
+                result.component,
+                result.status,
+                component_health.success_rate * 100.0
+            );
         }
     }
 
     /// Get component health status
     pub async fn get_component_health(&self, component_name: &str) -> Option<HealthStatus> {
-        self.components.read().await
+        self.components
+            .read()
+            .await
             .get(component_name)
             .map(|h| h.status.clone())
     }
 
     /// Get all component health statuses
     pub async fn get_all_health_statuses(&self) -> HashMap<String, HealthStatus> {
-        self.components.read().await
+        self.components
+            .read()
+            .await
             .iter()
             .map(|(name, health)| (name.clone(), health.status.clone()))
             .collect()
@@ -424,10 +458,12 @@ impl HealthMonitor {
     pub async fn get_system_health(&self) -> SystemHealthSummary {
         let components = self.components.read().await;
         let total_components = components.len();
-        let healthy_components = components.values()
+        let healthy_components = components
+            .values()
             .filter(|h| h.status == HealthStatus::Healthy)
             .count();
-        let unhealthy_components = components.values()
+        let unhealthy_components = components
+            .values()
             .filter(|h| h.status == HealthStatus::Unhealthy)
             .count();
 
@@ -489,20 +525,37 @@ impl FaultToleranceManager {
     }
 
     /// Register circuit breaker for a service
-    pub async fn register_circuit_breaker(&self, service_name: String, config: CircuitBreakerConfig) {
+    pub async fn register_circuit_breaker(
+        &self,
+        service_name: String,
+        config: CircuitBreakerConfig,
+    ) {
         let circuit_breaker = Arc::new(CircuitBreaker::new(service_name.clone(), config));
-        self.circuit_breakers.write().await.insert(service_name, circuit_breaker);
+        self.circuit_breakers
+            .write()
+            .await
+            .insert(service_name, circuit_breaker);
     }
 
     /// Register retry mechanism for a service
     pub async fn register_retry_mechanism(&self, service_name: String, config: RetryConfig) {
         let retry_mechanism = Arc::new(RetryMechanism::new(config));
-        self.retry_mechanisms.write().await.insert(service_name, retry_mechanism);
+        self.retry_mechanisms
+            .write()
+            .await
+            .insert(service_name, retry_mechanism);
     }
 
     /// Register recovery strategy for a service
-    pub async fn register_recovery_strategy(&self, service_name: String, strategy: RecoveryStrategy) {
-        self.recovery_strategies.write().await.insert(service_name, strategy);
+    pub async fn register_recovery_strategy(
+        &self,
+        service_name: String,
+        strategy: RecoveryStrategy,
+    ) {
+        self.recovery_strategies
+            .write()
+            .await
+            .insert(service_name, strategy);
     }
 
     /// Execute operation with fault tolerance
@@ -527,7 +580,8 @@ impl FaultToleranceManager {
     /// Get fault tolerance metrics
     pub async fn get_metrics(&self) -> FaultToleranceMetrics {
         let circuit_breakers = self.circuit_breakers.read().await;
-        let cb_metrics: Vec<_> = circuit_breakers.values()
+        let cb_metrics: Vec<_> = circuit_breakers
+            .values()
             .map(|cb| cb.get_metrics())
             .collect();
 
@@ -588,27 +642,33 @@ mod tests {
         let cb = CircuitBreaker::new("test".to_string(), config);
 
         // Test successful operation
-        let result = cb.execute(async { Ok::<_, PipelineError>("success") }).await;
+        let result = cb
+            .execute(async { Ok::<_, PipelineError>("success") })
+            .await;
         assert!(result.is_ok());
 
         // Test failing operations to open circuit breaker
         for _ in 0..3 {
-            let _ = cb.execute(async { 
-                Err::<String, _>(PipelineError::Mcp("test error".to_string())) 
-            }).await;
+            let _ = cb
+                .execute(async { Err::<String, _>(PipelineError::Mcp("test error".to_string())) })
+                .await;
         }
 
         assert_eq!(cb.get_state().await, CircuitBreakerState::Open);
 
         // Test that requests are rejected when circuit is open
-        let result = cb.execute(async { Ok::<_, PipelineError>("should fail") }).await;
+        let result = cb
+            .execute(async { Ok::<_, PipelineError>("should fail") })
+            .await;
         assert!(result.is_err());
 
         // Wait for recovery timeout
         sleep(Duration::from_millis(150)).await;
 
         // Test recovery to half-open
-        let result = cb.execute(async { Ok::<_, PipelineError>("recovery") }).await;
+        let result = cb
+            .execute(async { Ok::<_, PipelineError>("recovery") })
+            .await;
         assert!(result.is_ok());
         assert_eq!(cb.get_state().await, CircuitBreakerState::Closed);
     }
@@ -626,16 +686,18 @@ mod tests {
         let retry = RetryMechanism::new(config);
         let mut attempt_count = 0;
 
-        let result = retry.execute(|| {
-            attempt_count += 1;
-            Box::pin(async move {
-                if attempt_count < 3 {
-                    Err("temporary failure")
-                } else {
-                    Ok("success")
-                }
+        let result = retry
+            .execute(|| {
+                attempt_count += 1;
+                Box::pin(async move {
+                    if attempt_count < 3 {
+                        Err("temporary failure")
+                    } else {
+                        Ok("success")
+                    }
+                })
             })
-        }).await;
+            .await;
 
         assert!(result.is_ok());
         assert_eq!(attempt_count, 3);
@@ -646,7 +708,9 @@ mod tests {
         let monitor = HealthMonitor::new(HealthCheckConfig::default());
         monitor.start().await.unwrap();
 
-        monitor.register_component("test_component".to_string()).await;
+        monitor
+            .register_component("test_component".to_string())
+            .await;
 
         // Record healthy check
         let healthy_result = HealthCheckResult {
@@ -687,12 +751,16 @@ mod tests {
 
         // Register circuit breaker
         let cb_config = CircuitBreakerConfig::default();
-        manager.register_circuit_breaker("test_service".to_string(), cb_config).await;
+        manager
+            .register_circuit_breaker("test_service".to_string(), cb_config)
+            .await;
 
         // Test execution with fault tolerance
-        let result = manager.execute_with_fault_tolerance("test_service", async {
-            Ok::<_, PipelineError>("success")
-        }).await;
+        let result = manager
+            .execute_with_fault_tolerance("test_service", async {
+                Ok::<_, PipelineError>("success")
+            })
+            .await;
 
         assert!(result.is_ok());
 

@@ -4,7 +4,7 @@
 File system operations with M3 Max optimizations.
 */
 
-use crate::{Result, PipelineError};
+use crate::{PipelineError, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
@@ -43,12 +43,13 @@ impl FileHandler {
     /// Get file information
     pub async fn get_file_info(&self, file_path: &str) -> Result<FileInfo> {
         let path = Path::new(file_path);
-        
+
         if !path.exists() {
             return Err(PipelineError::Io(format!("File not found: {}", file_path)));
         }
 
-        let metadata = tokio::fs::metadata(path).await
+        let metadata = tokio::fs::metadata(path)
+            .await
             .map_err(|e| PipelineError::Io(format!("Failed to read metadata: {}", e)))?;
 
         Ok(FileInfo {
@@ -58,7 +59,7 @@ impl FileHandler {
             created: metadata.created().ok(),
             modified: metadata.modified().ok(),
             permissions: FilePermissions {
-                readable: true,  // Simplified for now
+                readable: true, // Simplified for now
                 writable: !metadata.permissions().readonly(),
                 executable: false, // Simplified for now
             },
@@ -68,23 +69,32 @@ impl FileHandler {
     /// List directory contents
     pub async fn list_directory(&self, dir_path: &str) -> Result<Vec<FileInfo>> {
         let path = Path::new(dir_path);
-        
+
         if !path.exists() {
-            return Err(PipelineError::Io(format!("Directory not found: {}", dir_path)));
+            return Err(PipelineError::Io(format!(
+                "Directory not found: {}",
+                dir_path
+            )));
         }
 
         if !path.is_dir() {
-            return Err(PipelineError::Io(format!("Path is not a directory: {}", dir_path)));
+            return Err(PipelineError::Io(format!(
+                "Path is not a directory: {}",
+                dir_path
+            )));
         }
 
-        let mut entries = tokio::fs::read_dir(path).await
+        let mut entries = tokio::fs::read_dir(path)
+            .await
             .map_err(|e| PipelineError::Io(format!("Failed to read directory: {}", e)))?;
 
         let mut file_infos = Vec::new();
 
-        while let Some(entry) = entries.next_entry().await
-            .map_err(|e| PipelineError::Io(format!("Failed to read directory entry: {}", e)))? {
-            
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| PipelineError::Io(format!("Failed to read directory entry: {}", e)))?
+        {
             let entry_path = entry.path();
             if let Some(path_str) = entry_path.to_str() {
                 match self.get_file_info(path_str).await {
@@ -99,9 +109,10 @@ impl FileHandler {
 
     /// Create directory
     pub async fn create_directory(&self, dir_path: &str) -> Result<()> {
-        tokio::fs::create_dir_all(dir_path).await
+        tokio::fs::create_dir_all(dir_path)
+            .await
             .map_err(|e| PipelineError::Io(format!("Failed to create directory: {}", e)))?;
-        
+
         tracing::info!("Created directory: {}", dir_path);
         Ok(())
     }
@@ -109,16 +120,18 @@ impl FileHandler {
     /// Delete file or directory
     pub async fn delete(&self, path: &str) -> Result<()> {
         let path_obj = Path::new(path);
-        
+
         if !path_obj.exists() {
             return Err(PipelineError::Io(format!("Path not found: {}", path)));
         }
 
         if path_obj.is_dir() {
-            tokio::fs::remove_dir_all(path).await
+            tokio::fs::remove_dir_all(path)
+                .await
                 .map_err(|e| PipelineError::Io(format!("Failed to delete directory: {}", e)))?;
         } else {
-            tokio::fs::remove_file(path).await
+            tokio::fs::remove_file(path)
+                .await
                 .map_err(|e| PipelineError::Io(format!("Failed to delete file: {}", e)))?;
         }
 
