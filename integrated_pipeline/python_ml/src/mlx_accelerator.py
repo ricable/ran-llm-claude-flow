@@ -25,7 +25,11 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any, Union, Callable
 import json
-import psutil
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 from pathlib import Path
 
 try:

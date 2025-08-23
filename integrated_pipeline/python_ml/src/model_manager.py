@@ -18,7 +18,11 @@ Version: 1.0.0
 import asyncio
 import logging
 import time
-try:\n    import psutil\n    PSUTIL_AVAILABLE = True\nexcept ImportError:\n    PSUTIL_AVAILABLE = False
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum

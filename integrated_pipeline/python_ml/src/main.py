@@ -34,7 +34,11 @@ from .mlx_accelerator import MLXAccelerator
 from .ipc_client import IPCClient, DocumentProcessingRequest, ProcessingResponse
 
 # System utilities
-import psutil
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 from . import get_system_info, get_performance_recommendations, print_initialization_info
 
 
