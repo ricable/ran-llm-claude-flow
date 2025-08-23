@@ -1,64 +1,171 @@
-# Python ML Engine Configuration
-# Optimized for M3 Max with 45GB memory allocation
+# Enhanced Multi-Model Pipeline Configuration
+# Optimized for M3 Max with intelligent model selection and resource management
+# Weeks 2-4 Core Pipeline Implementation
 
-# Model configurations for different Qwen3 variants
+# Model configurations for Qwen3 variants with advanced optimization
 models:
-  qwen3_1_5b:
-    size: "1.5B"
-    backend: "mlx"  # mlx, lmstudio, ollama, transformers
+  # Fast Processing Model - Optimized for throughput
+  qwen3_1_7b:
+    size: "1.7B"
+    backend: "mlx"  # MLX for Apple Silicon optimization
     model_path: "Qwen/Qwen2.5-1.5B-Instruct"
+    fallback_path: "microsoft/DialoGPT-medium"  # Fallback if Qwen unavailable
+    
+    # Memory and resource allocation
     memory_budget_gb: 4.0
+    max_memory_gb: 6.0  # Emergency allocation
+    memory_efficiency_target: 0.85
+    
+    # Quantization configuration
     quantization:
       enabled: true
       bits: 4
       group_size: 128
+      optimization_level: "aggressive"  # More aggressive for speed
+      cache_quantized: true
+    
+    # Generation parameters optimized for speed
     generation:
       max_tokens: 2048
       temperature: 0.7
       top_p: 0.9
+      top_k: 40
       batch_size: 8
+      max_batch_size: 16
+      streaming: true
+      early_stopping: true
+    
+    # Performance targets
+    performance_targets:
+      max_inference_time_s: 2.0
+      min_throughput_docs_hour: 35
+      target_quality_score: 0.72
+      memory_efficiency: 0.85
+    
+    # Specialized use cases
     use_cases:
       - "fast_processing"
       - "simple_qa"
       - "parameter_extraction"
+      - "real_time_analysis"
+      - "batch_processing"
     
+    # Optimization strategies
+    optimization:
+      enable_kv_cache: true
+      enable_mixed_precision: true
+      enable_graph_optimization: true
+      prefill_optimization: true
+      decode_optimization: true
+    
+  # Balanced Processing Model - Quality/Speed tradeoff
   qwen3_7b:
     size: "7B"
     backend: "mlx"
     model_path: "Qwen/Qwen2.5-7B-Instruct"
+    fallback_path: "microsoft/DialoGPT-large"
+    
+    # Memory configuration
     memory_budget_gb: 12.0
+    max_memory_gb: 15.0
+    memory_efficiency_target: 0.88
+    
+    # Quantization for balanced performance
     quantization:
       enabled: true
       bits: 4
       group_size: 128
+      optimization_level: "balanced"
+      cache_quantized: true
+      dynamic_quantization: true
+    
+    # Generation parameters for quality balance
     generation:
       max_tokens: 4096
       temperature: 0.7
       top_p: 0.9
+      top_k: 50
       batch_size: 4
+      max_batch_size: 8
+      streaming: true
+      repetition_penalty: 1.1
+    
+    # Performance targets
+    performance_targets:
+      max_inference_time_s: 5.0
+      min_throughput_docs_hour: 25
+      target_quality_score: 0.82
+      memory_efficiency: 0.88
+    
+    # Use cases for balanced processing
     use_cases:
       - "balanced_processing"
       - "technical_qa"
       - "complex_reasoning"
+      - "document_analysis"
+      - "content_generation"
     
-  qwen3_32b:
-    size: "32B"
-    backend: "lmstudio"  # Use LM Studio for large model
+    # Advanced optimization
+    optimization:
+      enable_kv_cache: true
+      enable_mixed_precision: true
+      enable_attention_optimization: true
+      enable_layer_fusion: true
+      dynamic_batching: true
+    
+  # Quality Processing Model - Maximum accuracy
+  qwen3_30b:
+    size: "30B"
+    backend: "lmstudio"  # LM Studio for large model stability
     model_path: "qwen2.5-32b-instruct"
+    fallback_path: "qwen2.5-14b-instruct"  # Smaller fallback
+    
+    # Memory configuration for large model
     memory_budget_gb: 30.0
+    max_memory_gb: 35.0
+    memory_efficiency_target: 0.90
+    
+    # Quantization (handled by LM Studio)
     quantization:
-      enabled: false  # LM Studio handles quantization
+      enabled: false  # LM Studio manages quantization
+      external_quantization: true
+      preferred_precision: "int4"
+    
+    # Generation parameters for maximum quality
     generation:
       max_tokens: 8192
       temperature: 0.7
       top_p: 0.9
+      top_k: 100
       batch_size: 2
+      max_batch_size: 4
+      streaming: false  # Full generation for quality
+      repetition_penalty: 1.05
+      length_penalty: 1.0
+    
+    # Performance targets (quality focused)
+    performance_targets:
+      max_inference_time_s: 15.0
+      min_throughput_docs_hour: 15
+      target_quality_score: 0.91
+      memory_efficiency: 0.90
+    
+    # High-quality use cases
     use_cases:
       - "high_quality"
       - "expert_analysis"
       - "complex_documentation"
+      - "research_analysis"
+      - "quality_assessment"
+    
+    # Quality-focused optimization
+    optimization:
+      enable_quality_boost: true
+      enable_consistency_check: true
+      multi_pass_generation: false
+      quality_validation: true
 
-# Memory allocation strategy for M3 Max (45GB total)
+# Advanced Memory Management for M3 Max (45GB total allocation)
 memory:
   total_budget_gb: 45.0
   allocation:

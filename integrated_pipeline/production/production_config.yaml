@@ -1,0 +1,339 @@
+# Production Configuration for Hybrid Rust-Python Pipeline
+# Weeks 5-8 Advanced Production Deployment
+
+# Production Environment Settings
+environment:
+  name: "production"
+  stage: "advanced-deployment"  # weeks 5-8
+  region: "us-west-2"
+  availability_zones: ["us-west-2a", "us-west-2b", "us-west-2c"]
+
+# Performance Targets (Weeks 5-8 Advanced Goals)
+performance:
+  target_throughput: 35  # docs/hour minimum
+  max_throughput: 50     # docs/hour stretch goal
+  quality_threshold: 0.80
+  max_memory_usage: 122368  # 95% of 128GB (in MB)
+  monitoring_interval: 5    # seconds
+  health_check_interval: 10 # seconds
+  
+# Advanced Optimization Settings
+optimization:
+  enable_simd: true
+  enable_numa_optimization: true
+  use_mlx_quantization: 4
+  enable_predictive_caching: true
+  enable_adaptive_batching: true
+  enable_smart_scheduling: true
+  zero_copy_ipc: true
+  
+# M3 Max Hardware Configuration
+hardware:
+  cpu_cores: 12         # 8 P-cores + 4 E-cores
+  memory_total_gb: 128  # Unified memory
+  memory_allocation:
+    rust_core_gb: 60    # High-performance processing
+    python_ml_gb: 45    # ML inference and training
+    shared_ipc_gb: 15   # Zero-copy transfers
+    system_reserve_gb: 8 # OS, monitoring, safety margin
+  
+  numa_configuration:
+    enable_numa_binding: true
+    preferred_node: 0
+    memory_interleaving: false
+    
+  cpu_affinity:
+    rust_core_cores: [0, 1, 2, 3, 4, 5, 6, 7]  # P-cores
+    python_ml_cores: [8, 9, 10, 11]             # E-cores
+    monitoring_cores: [0, 1]                     # Shared with rust core
+
+# Advanced Model Configuration
+models:
+  qwen3_variants:
+    "1.7b":
+      memory_gb: 3.5
+      optimal_batch_size: 32
+      max_context: 4096
+      use_case: "fast_processing"
+      quantization: "4bit"
+      
+    "7b": 
+      memory_gb: 14
+      optimal_batch_size: 16
+      max_context: 8192
+      use_case: "balanced_quality"
+      quantization: "4bit"
+      
+    "30b":
+      memory_gb: 45
+      optimal_batch_size: 4
+      max_context: 16384
+      use_case: "high_quality"
+      quantization: "8bit"
+      
+  predictive_selection:
+    enable: true
+    confidence_threshold: 0.75
+    fallback_model: "7b"
+    adaptation_interval_hours: 6
+    
+# Advanced IPC Configuration  
+ipc:
+  protocol: "zero_copy_shared_memory"
+  shared_memory_size_gb: 15
+  message_queue_size: 10000
+  batch_size: 128
+  compression: "lz4"
+  serialization: "msgpack"
+  timeout_ms: 100
+  
+  connection_pool:
+    max_connections: 32
+    idle_timeout_seconds: 300
+    health_check_interval: 30
+    
+# Production Scaling Configuration
+scaling:
+  auto_scale: true
+  metrics_based_scaling: true
+  
+  thresholds:
+    cpu_usage_scale_up: 80
+    cpu_usage_scale_down: 30
+    memory_usage_scale_up: 85
+    memory_usage_scale_down: 40
+    queue_length_scale_up: 100
+    response_time_scale_up: 2000  # ms
+    
+  limits:
+    min_instances: 1
+    max_instances: 8
+    scale_up_cooldown: 300   # seconds
+    scale_down_cooldown: 600 # seconds
+    
+# Advanced Monitoring Configuration
+monitoring:
+  enable_real_time: true
+  enable_predictive_analytics: true
+  enable_bottleneck_detection: true
+  overhead_target_percent: 1  # Sub-1% monitoring overhead
+  
+  metrics_collection:
+    interval_seconds: 1
+    batch_size: 100
+    retention_hours: 168  # 7 days
+    
+  dashboards:
+    grafana_enabled: true
+    prometheus_enabled: true
+    custom_dashboard: true
+    
+  alerting:
+    enable_smart_alerts: true
+    alert_channels: ["slack", "email", "pagerduty"]
+    
+    thresholds:
+      memory_usage_critical: 95
+      cpu_usage_critical: 90
+      error_rate_warning: 1
+      error_rate_critical: 5
+      response_time_warning: 1000
+      response_time_critical: 2000
+      quality_score_warning: 0.75
+      quality_score_critical: 0.70
+
+# Production Health Checks
+health_checks:
+  startup_probe:
+    initial_delay_seconds: 30
+    period_seconds: 10
+    timeout_seconds: 5
+    failure_threshold: 3
+    
+  liveness_probe:
+    period_seconds: 10
+    timeout_seconds: 5
+    failure_threshold: 3
+    success_threshold: 1
+    
+  readiness_probe:
+    period_seconds: 5
+    timeout_seconds: 3
+    failure_threshold: 3
+    success_threshold: 1
+    
+  endpoints:
+    health: "/health"
+    ready: "/ready" 
+    metrics: "/metrics"
+    
+# Advanced Logging Configuration
+logging:
+  level: "INFO"
+  format: "json"
+  structured: true
+  
+  outputs:
+    - type: "file"
+      path: "/var/log/hybrid-pipeline/app.log"
+      rotation: "daily"
+      retention_days: 30
+      
+    - type: "elk_stack"
+      elasticsearch_url: "http://elasticsearch:9200"
+      index_pattern: "hybrid-pipeline-*"
+      
+    - type: "prometheus"
+      metrics_path: "/metrics"
+      push_gateway: "http://pushgateway:9091"
+
+# Security Configuration
+security:
+  enable_tls: true
+  tls_version: "1.3"
+  
+  authentication:
+    method: "jwt"
+    token_expiry_hours: 24
+    refresh_enabled: true
+    
+  authorization:
+    rbac_enabled: true
+    default_role: "readonly"
+    
+  secrets_management:
+    provider: "kubernetes_secrets"
+    rotation_days: 90
+    
+  network:
+    allowed_origins: ["*.production.internal"]
+    rate_limiting: true
+    ddos_protection: true
+
+# Backup and Recovery
+backup:
+  enable_automated: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retention_days: 30
+  
+  locations:
+    - type: "s3"
+      bucket: "hybrid-pipeline-backups"
+      encryption: "AES-256"
+      
+    - type: "local"
+      path: "/backup/hybrid-pipeline"
+      
+  recovery:
+    rpo_minutes: 60   # Recovery Point Objective
+    rto_minutes: 30   # Recovery Time Objective
+
+# Deployment Configuration
+deployment:
+  strategy: "blue_green"
+  
+  blue_green:
+    auto_promote: false
+    traffic_switch_delay: 300
+    rollback_threshold_error_rate: 5
+    
+  canary:
+    enabled: false
+    traffic_percentage: 10
+    duration_minutes: 30
+    
+  rollback:
+    auto_rollback: true
+    error_rate_threshold: 3
+    response_time_threshold: 3000
+    
+# Quality Assurance
+quality_assurance:
+  enable_continuous_validation: true
+  
+  validation_pipeline:
+    - stage: "smoke_tests"
+      timeout_minutes: 5
+    - stage: "integration_tests" 
+      timeout_minutes: 15
+    - stage: "performance_tests"
+      timeout_minutes: 30
+    - stage: "quality_validation"
+      timeout_minutes: 20
+      
+  quality_gates:
+    min_test_coverage: 80
+    max_error_rate: 1
+    min_quality_score: 0.80
+    max_response_time: 2000
+    
+# Advanced Features (Weeks 5-8)
+advanced_features:
+  predictive_model_selection:
+    enable: true
+    ml_confidence_threshold: 0.75
+    
+  advanced_deduplication:
+    enable: true
+    embedding_model: "all-MiniLM-L6-v2"
+    similarity_threshold: 0.85
+    
+  cross_document_validation:
+    enable: true
+    consistency_threshold: 0.90
+    
+  adaptive_optimization:
+    enable: true
+    learning_rate: 0.01
+    adaptation_window_hours: 4
+    
+  intelligent_caching:
+    enable: true
+    cache_size_gb: 10
+    ttl_hours: 24
+    hit_ratio_target: 0.85
+
+# Cost Optimization
+cost_optimization:
+  enable_cost_monitoring: true
+  
+  targets:
+    cost_per_document: 0.01  # USD
+    cost_per_hour: 5.00      # USD
+    
+  optimization_strategies:
+    - "right_sizing"
+    - "spot_instances"
+    - "reserved_capacity"
+    - "auto_scaling"
+    
+# Compliance and Governance
+compliance:
+  data_retention_days: 365
+  audit_logging: true
+  gdpr_compliance: true
+  
+  policies:
+    - name: "data_privacy"
+      enforce: true
+    - name: "security_scanning"
+      enforce: true
+    - name: "vulnerability_assessment"
+      enforce: true
+
+# Development and Testing
+development:
+  enable_debug_mode: false
+  enable_profiling: false
+  test_data_location: "/data/test"
+  
+  testing:
+    unit_test_threshold: 80
+    integration_test_threshold: 90
+    e2e_test_threshold: 85
+    
+# Experimental Features
+experimental:
+  enable_quantum_optimization: false  # Future feature
+  enable_neuromorphic_processing: false  # Future feature
+  enable_federated_learning: false    # Future feature

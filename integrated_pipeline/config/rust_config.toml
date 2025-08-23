@@ -1,0 +1,49 @@
+[processing]
+max_threads = 16  # M3 Max 16-core optimization
+memory_pool_size_gb = 60  # Rust core memory allocation
+log_level = "info"
+performance_monitoring = true
+batch_processing = true
+max_concurrent_documents = 8
+
+[m3_max_optimization]
+enable_simd = true
+target_cpu = "apple-m3"
+vectorization = true
+cache_optimization = true
+memory_prefetch = true
+zero_copy_transfers = true
+
+[ipc]
+shared_memory_size_gb = 15  # 15GB shared memory pool
+max_connections = 128
+timeout_seconds = 30
+enable_checksum_validation = true
+connection_pool_size = 32
+queue_size = 1024
+batch_size = 64
+compression_enabled = true
+enable_performance_monitoring = true
+named_pipe_path = "/tmp/claude_flow_ipc"
+health_check_interval_seconds = 30
+
+[performance]
+target_documents_per_hour = 25
+max_processing_time_seconds = 300
+memory_usage_threshold = 0.85
+cpu_usage_threshold = 0.90
+quality_threshold = 0.75
+
+[monitoring]
+enable_real_time_monitoring = true
+metrics_collection_interval = 5
+log_performance_stats = true
+health_check_enabled = true
+detailed_metrics = true
+
+[features]
+enable_advanced_processing = true
+enable_semantic_analysis = true
+enable_quality_assessment = true
+enable_batch_optimization = true
+enable_mcp_integration = true

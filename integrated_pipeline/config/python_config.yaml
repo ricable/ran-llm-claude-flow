@@ -1,0 +1,120 @@
+# Python ML Engine Configuration for M3 Max Optimization
+# Memory Budget: 45GB (out of 128GB total)
+
+memory:
+  total_budget_gb: 45.0
+  allocation:
+    model_loading: 25.0  # Model weights and embeddings
+    inference_cache: 15.0  # MLX acceleration cache
+    processing_buffer: 5.0   # Document processing
+
+# Qwen3 Model Configuration
+models:
+  qwen3_1_5b:
+    size: "1.5B"
+    backend: "mlx"
+    model_path: "Qwen/Qwen2.5-1.5B-Instruct"
+    memory_budget_gb: 4.0
+    quantization: "4bit"
+    enable_flash_attention: true
+    
+  qwen3_7b:
+    size: "7B"
+    backend: "mlx"
+    model_path: "Qwen/Qwen2.5-7B-Instruct"
+    memory_budget_gb: 15.0
+    quantization: "4bit"
+    enable_flash_attention: true
+    
+  qwen3_32b:
+    size: "32B"
+    backend: "mlx"
+    model_path: "Qwen/Qwen2.5-32B-Instruct"
+    memory_budget_gb: 35.0
+    quantization: "4bit"
+    enable_flash_attention: true
+
+# MLX Acceleration Settings
+performance:
+  mlx:
+    enable_metal_acceleration: true
+    memory_pool_size_gb: 15.0
+    max_sequence_length: 32768
+    enable_graph_optimization: true
+    enable_kernel_fusion: true
+    
+  batching:
+    enable_dynamic_batching: true
+    max_batch_size: 8
+    batch_timeout_ms: 50
+    adaptive_batch_sizing: true
+    
+  m3_max_optimization:
+    enable_unified_memory: true
+    memory_bandwidth_optimization: true
+    neural_engine_acceleration: true
+    vector_processing_optimization: true
+
+# Quality Control
+quality:
+  thresholds:
+    minimum: 0.6
+    target: 0.75
+    excellent: 0.9
+  
+  semantic_analysis:
+    enable_complexity_analysis: true
+    enable_technical_term_detection: true
+    enable_parameter_extraction: true
+    enable_context_understanding: true
+
+# Processing Configuration
+processing:
+  qa_generation:
+    default_count: 5
+    max_count: 20
+    min_quality_score: 0.6
+    diversity_threshold: 0.3
+    
+  document_analysis:
+    enable_semantic_chunking: true
+    chunk_size: 2048
+    overlap_size: 256
+    enable_context_preservation: true
+
+# Integration Settings
+integration:
+  targets:
+    documents_per_hour: 25
+    qa_pairs_per_document: 5
+    average_processing_time: 120  # seconds
+    quality_threshold: 0.75
+    
+  ipc:
+    pipe_path: "/tmp/claude_flow_ipc"
+    timeout_seconds: 30
+    max_retries: 3
+    enable_compression: true
+    enable_checksum: true
+    
+  monitoring:
+    enable_real_time_metrics: true
+    performance_logging: true
+    health_check_interval: 30
+    detailed_profiling: true
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  file_path: "logs/python_ml_engine.log"
+  max_file_size_mb: 100
+  backup_count: 5
+  enable_structured_logging: true
+  
+# Error Handling
+error_handling:
+  max_retries: 3
+  retry_delay_seconds: 2
+  circuit_breaker_threshold: 10
+  fallback_model: "qwen3_1_5b"
+  enable_graceful_degradation: true
