@@ -14,5 +14,13 @@
     "duration": 3753.2177500000003,
     "timestamp": 1755883311440,
     "metadata": {}
+  },
+  {
+    "id": "cmd-github-1755883324968",
+    "type": "github",
+    "success": true,
+    "duration": 2172093.178708,
+    "timestamp": 1755885497047,
+    "metadata": {}
   }
 ]
