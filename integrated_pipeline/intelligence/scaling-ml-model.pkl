@@ -1,0 +1,6 @@
+# ML Model Placeholder
+# This file will be generated automatically when the workload predictor trains on real data
+# Initial model state: untrained
+MODEL_VERSION = "1.0.0"
+CREATED_AT = "2025-08-23T15:00:00Z"
+TRAINING_STATUS = "INITIALIZED"

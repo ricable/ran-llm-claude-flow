@@ -1,0 +1,97 @@
+[package]
+name = "autoscaling-intelligence"
+version = "1.0.0"
+edition = "2021"
+authors = ["Claude Code <code@anthropic.com>"]
+description = "Intelligent Auto-Scaling System with AI-Driven Optimization"
+
+[dependencies]
+# Async runtime and utilities
+tokio = { version = "1.28", features = ["full"] }
+tokio-util = "0.7"
+futures = "0.3"
+
+# Serialization and deserialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Networking and HTTP
+reqwest = { version = "0.11", features = ["json"] }
+hyper = { version = "0.14", features = ["full"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.10"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Metrics and monitoring
+prometheus = "0.13"
+metrics = "0.20"
+
+# Random number generation
+rand = "0.8"
+
+# UUID generation
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Configuration
+config = "0.13"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Collections and data structures
+dashmap = "5.4"
+petgraph = "0.6"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Testing
+[dev-dependencies]
+tokio-test = "0.4"
+mockall = "0.11"
+
+[features]
+default = []
+kubernetes = ["k8s-openapi", "kube"]
+docker = ["bollard"]
+aws = ["aws-sdk-ec2", "aws-sdk-ecs"]
+
+[dependencies.k8s-openapi]
+version = "0.18"
+optional = true
+features = ["v1_27"]
+
+[dependencies.kube]
+version = "0.83"
+optional = true
+features = ["runtime", "derive"]
+
+[dependencies.bollard]
+version = "0.14"
+optional = true
+
+[dependencies.aws-sdk-ec2]
+version = "0.28"
+optional = true
+
+[dependencies.aws-sdk-ecs]
+version = "0.28"
+optional = true
+
+[[bin]]
+name = "autoscaling-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "cost-optimizer"
+path = "src/cost_optimizer_main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

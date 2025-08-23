@@ -1,0 +1,190 @@
+# Auto-Scaling Intelligence Configuration
+# Phase 4 Production Optimization Settings
+
+scaling:
+  # Core scaling parameters
+  min_instances: 1
+  max_instances: 50
+  target_cpu_utilization: 70.0
+  target_memory_utilization: 75.0
+  
+  # Thresholds
+  scale_up_threshold: 80.0
+  scale_down_threshold: 30.0
+  
+  # Timing controls
+  cooldown_period_seconds: 300
+  evaluation_interval_seconds: 60
+  prediction_window_minutes: 15
+  
+  # ML model configuration
+  ml_prediction_weight: 0.7  # 70% ML, 30% reactive
+  confidence_threshold: 0.6
+  retrain_interval_hours: 24
+  min_training_points: 50
+  
+  # Multi-dimensional scaling
+  dimensions:
+    - name: "cpu"
+      weight: 0.4
+      threshold_up: 80.0
+      threshold_down: 30.0
+    - name: "memory" 
+      weight: 0.3
+      threshold_up: 85.0
+      threshold_down: 40.0
+    - name: "request_rate"
+      weight: 0.2
+      threshold_up: 200.0
+      threshold_down: 50.0
+    - name: "response_time"
+      weight: 0.1
+      threshold_up: 1000.0
+      threshold_down: 200.0
+
+cost_optimization:
+  # Cost control settings
+  max_cost_per_hour: 50.0
+  cost_weight: 0.6
+  performance_weight: 0.4
+  spot_instance_tolerance: 0.4
+  
+  # Instance types and pricing
+  instance_types:
+    - name: "t3.micro"
+      vcpus: 2
+      memory_gb: 1
+      cost_per_hour: 0.0104
+      performance_score: 0.2
+    - name: "t3.small"
+      vcpus: 2
+      memory_gb: 2
+      cost_per_hour: 0.0208
+      performance_score: 0.3
+    - name: "c5.large"
+      vcpus: 2
+      memory_gb: 4
+      cost_per_hour: 0.085
+      performance_score: 0.6
+    - name: "c5.xlarge"
+      vcpus: 4
+      memory_gb: 8
+      cost_per_hour: 0.17
+      performance_score: 0.8
+    - name: "m5.large"
+      vcpus: 2
+      memory_gb: 8
+      cost_per_hour: 0.096
+      performance_score: 0.5
+
+load_balancing:
+  # Intelligent routing configuration
+  default_algorithm: "AdaptiveAI"
+  algorithms:
+    - "WeightedRoundRobin"
+    - "LeastConnections"
+    - "LeastResponseTime"
+    - "AdaptiveAI"
+    - "PowerOfTwoChoices"
+    - "ConsistentHashing"
+  
+  # Health monitoring
+  health_check_interval_seconds: 30
+  max_retries: 3
+  circuit_breaker_threshold: 0.5
+  circuit_breaker_recovery_timeout: 60
+  
+  # Session management
+  sticky_sessions: false
+  session_timeout_minutes: 30
+  
+  # Performance tuning
+  adaptive_weights: true
+  performance_window_size: 100
+  ai_routing_enabled: true
+
+fault_tolerance:
+  # Circuit breaker settings
+  failure_threshold: 5
+  recovery_timeout_seconds: 60
+  half_open_max_calls: 3
+  
+  # Auto-recovery
+  auto_recovery_enabled: true
+  recovery_check_interval_seconds: 30
+  max_recovery_attempts: 3
+  
+  # Isolation settings
+  instance_isolation_enabled: true
+  isolation_threshold: 0.8
+  isolation_duration_minutes: 10
+
+monitoring:
+  # Metrics collection
+  metrics_interval_seconds: 30
+  metric_retention_hours: 24
+  enable_detailed_logging: true
+  
+  # Alert thresholds
+  cpu_alert_threshold: 90.0
+  memory_alert_threshold: 95.0
+  error_rate_alert_threshold: 5.0
+  response_time_alert_threshold: 2000.0
+  
+  # Export settings
+  export_metrics: true
+  export_interval_minutes: 5
+  export_format: "prometheus"
+
+prediction:
+  # Workload prediction settings
+  prediction_horizons_minutes: [5, 15, 30, 60]
+  anomaly_threshold: 2.0
+  seasonal_adjustment: true
+  
+  # Feature engineering
+  feature_window_size: 20
+  lag_features: [1, 2, 3]
+  rolling_windows: [5, 10, 20]
+  
+  # Model configuration
+  models:
+    - name: "random_forest"
+      enabled: true
+      weight: 0.4
+      params:
+        n_estimators: 100
+        max_depth: 15
+    - name: "gradient_boosting"
+      enabled: true
+      weight: 0.4
+      params:
+        n_estimators: 100
+        learning_rate: 0.1
+    - name: "linear_ridge"
+      enabled: true
+      weight: 0.2
+      params:
+        alpha: 1.0
+
+# Environment-specific overrides
+environments:
+  development:
+    scaling:
+      max_instances: 10
+    cost_optimization:
+      max_cost_per_hour: 10.0
+  
+  staging:
+    scaling:
+      max_instances: 20
+    cost_optimization:
+      max_cost_per_hour: 25.0
+  
+  production:
+    scaling:
+      max_instances: 50
+    cost_optimization:
+      max_cost_per_hour: 100.0
+    monitoring:
+      enable_detailed_logging: false
