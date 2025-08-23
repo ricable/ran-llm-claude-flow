@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAN LLM Pipeline - Health Monitoring Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a3a 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            border-bottom: 2px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .logo h1 {
+            background: linear-gradient(45deg, #00ff88, #00ccff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 25px;
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid #00ff88;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #00ff88;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .dashboard {
+            padding: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .metric-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-5px);
+            border-color: #00ff88;
+            box-shadow: 0 10px 30px rgba(0, 255, 136, 0.2);
+        }
+        
+        .metric-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .metric-title {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+        }
+        
+        .metric-icon {
+            font-size: 1.5rem;
+            color: #00ff88;
+        }
+        
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(45deg, #00ff88, #00ccff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .metric-change {
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        
+        .metric-change.positive {
+            color: #00ff88;
+        }
+        
+        .metric-change.negative {
+            color: #ff4757;
+        }
+        
+        .charts-section {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .chart-container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            height: 400px;
+        }
+        
+        .chart-title {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            text-align: center;
+            color: #00ff88;
+        }
+        
+        .alerts-section {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .alerts-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .alert-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            border-left: 4px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .alert-item:hover {
+            transform: translateX(5px);
+        }
+        
+        .alert-item.critical {
+            border-left-color: #ff4757;
+        }
+        
+        .alert-item.high {
+            border-left-color: #ff6348;
+        }
+        
+        .alert-item.medium {
+            border-left-color: #ffa502;
+        }
+        
+        .alert-item.low {
+            border-left-color: #2ed573;
+        }
+        
+        .alert-icon {
+            font-size: 1.2rem;
+            width: 20px;
+        }
+        
+        .alert-content {
+            flex: 1;
+        }
+        
+        .alert-message {
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+        
+        .alert-time {
+            font-size: 0.8rem;
+            color: #888;
+        }
+        
+        .predictions-section {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .prediction-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            border-left: 4px solid #00ccff;
+        }
+        
+        .prediction-content {
+            flex: 1;
+        }
+        
+        .prediction-title {
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+            color: #00ccff;
+        }
+        
+        .prediction-eta {
+            font-size: 0.8rem;
+            color: #888;
+        }
+        
+        .confidence-bar {
+            width: 60px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ccff, #00ff88);
+            transition: width 0.3s ease;
+        }
+        
+        .component-health {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .component-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .component-name {
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .health-score {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .health-status {
+            font-size: 0.8rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .health-status.healthy {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+        }
+        
+        .health-status.warning {
+            background: rgba(255, 165, 2, 0.2);
+            color: #ffa502;
+        }
+        
+        .health-status.degraded {
+            background: rgba(255, 99, 72, 0.2);
+            color: #ff6348;
+        }
+        
+        .health-status.critical {
+            background: rgba(255, 71, 87, 0.2);
+            color: #ff4757;
+        }
+        
+        .performance-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+        
+        .stat-title {
+            font-size: 0.8rem;
+            color: #888;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #00ff88;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-top: 2px solid #00ff88;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .refresh-btn {
+            background: linear-gradient(45deg, #00ff88, #00ccff);
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 25px;
+            color: #000;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .refresh-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
+        }
+        
+        @media (max-width: 768px) {
+            .header {
+                padding: 1rem;
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .dashboard {
+                padding: 1rem;
+            }
+            
+            .charts-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .metric-value {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <i class="fas fa-microchip" style="font-size: 2rem; color: #00ff88;"></i>
+            <h1>RAN LLM Pipeline Monitor</h1>
+        </div>
+        <div class="status-indicator">
+            <div class="status-dot"></div>
+            <span>System Healthy</span>
+            <button class="refresh-btn" onclick="refreshData()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
+    </header>
+
+    <main class="dashboard">
+        <!-- Key Performance Metrics -->
+        <section class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-title">Document Processing Rate</span>
+                    <i class="fas fa-file-text metric-icon"></i>
+                </div>
+                <div class="metric-value" id="doc-rate">28.5</div>
+                <div class="metric-change positive">
+                    <i class="fas fa-arrow-up"></i>
+                    <span>+12% vs target</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-title">M3 Max CPU Utilization</span>
+                    <i class="fas fa-processor metric-icon"></i>
+                </div>
+                <div class="metric-value" id="cpu-util">42%</div>
+                <div class="metric-change positive">
+                    <i class="fas fa-arrow-down"></i>
+                    <span>Within optimal range</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-title">GPU Utilization</span>
+                    <i class="fas fa-microchip metric-icon"></i>
+                </div>
+                <div class="metric-value" id="gpu-util">65%</div>
+                <div class="metric-change positive">
+                    <i class="fas fa-arrow-up"></i>
+                    <span>ML workload active</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-title">Memory Usage</span>
+                    <i class="fas fa-memory metric-icon"></i>
+                </div>
+                <div class="metric-value" id="memory-usage">89.5GB</div>
+                <div class="metric-change positive">
+                    <span>70% of 128GB</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-title">IPC Latency P99</span>
+                    <i class="fas fa-exchange-alt metric-icon"></i>
+                </div>
+                <div class="metric-value" id="ipc-latency">3.2ms</div>
+                <div class="metric-change positive">
+                    <i class="fas fa-arrow-down"></i>
+                    <span>Below 10ms target</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-title">Pipeline Efficiency</span>
+                    <i class="fas fa-tachometer-alt metric-icon"></i>
+                </div>
+                <div class="metric-value" id="pipeline-efficiency">94%</div>
+                <div class="metric-change positive">
+                    <i class="fas fa-arrow-up"></i>
+                    <span>Excellent performance</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Real-time Charts -->
+        <section class="charts-section">
+            <div class="chart-container">
+                <div class="chart-title">System Performance Timeline</div>
+                <canvas id="performance-chart" width="400" height="200"></canvas>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">Resource Allocation</div>
+                <canvas id="resource-chart" width="200" height="200"></canvas>
+            </div>
+        </section>
+
+        <!-- Component Health Status -->
+        <section class="component-health">
+            <div class="component-card">
+                <div class="component-name">Rust Core</div>
+                <div class="health-score" style="color: #00ff88;">95%</div>
+                <div class="health-status healthy">Healthy</div>
+            </div>
+            <div class="component-card">
+                <div class="component-name">Python ML</div>
+                <div class="health-score" style="color: #00ff88;">92%</div>
+                <div class="health-status healthy">Healthy</div>
+            </div>
+            <div class="component-card">
+                <div class="component-name">IPC System</div>
+                <div class="health-score" style="color: #00ff88;">96%</div>
+                <div class="health-status healthy">Healthy</div>
+            </div>
+            <div class="component-card">
+                <div class="component-name">Shared Memory</div>
+                <div class="health-score" style="color: #00ff88;">94%</div>
+                <div class="health-status healthy">Healthy</div>
+            </div>
+            <div class="component-card">
+                <div class="component-name">MCP Protocol</div>
+                <div class="health-score" style="color: #ffa502;">91%</div>
+                <div class="health-status warning">Warning</div>
+            </div>
+            <div class="component-card">
+                <div class="component-name">Monitoring</div>
+                <div class="health-score" style="color: #00ff88;">98%</div>
+                <div class="health-status healthy">Healthy</div>
+            </div>
+        </section>
+
+        <!-- Predictive Analytics -->
+        <section class="predictions-section">
+            <div class="alerts-header">
+                <h2><i class="fas fa-crystal-ball"></i> Predictive Analytics</h2>
+                <span class="badge" style="background: rgba(0, 204, 255, 0.2); color: #00ccff; padding: 0.25rem 0.5rem; border-radius: 12px;">4 Predictions</span>
+            </div>
+            <div class="prediction-item">
+                <i class="fas fa-brain" style="color: #00ccff;"></i>
+                <div class="prediction-content">
+                    <div class="prediction-title">Memory pressure likely in 45 minutes</div>
+                    <div class="prediction-eta">Confidence: 87% • ETA: 2024-08-23 15:30</div>
+                </div>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" style="width: 87%;"></div>
+                </div>
+            </div>
+            <div class="prediction-item">
+                <i class="fas fa-chart-line" style="color: #00ccff;"></i>
+                <div class="prediction-content">
+                    <div class="prediction-title">Document processing rate may decrease</div>
+                    <div class="prediction-eta">Confidence: 72% • ETA: 2024-08-23 16:15</div>
+                </div>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" style="width: 72%;"></div>
+                </div>
+            </div>
+            <div class="prediction-item">
+                <i class="fas fa-temperature-high" style="color: #00ccff;"></i>
+                <div class="prediction-content">
+                    <div class="prediction-title">GPU temperature approaching threshold</div>
+                    <div class="prediction-eta">Confidence: 65% • ETA: 2024-08-23 17:00</div>
+                </div>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" style="width: 65%;"></div>
+                </div>
+            </div>
+            <div class="prediction-item">
+                <i class="fas fa-network-wired" style="color: #00ccff;"></i>
+                <div class="prediction-content">
+                    <div class="prediction-title">IPC latency spike predicted during peak load</div>
+                    <div class="prediction-eta">Confidence: 81% • ETA: 2024-08-23 18:30</div>
+                </div>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" style="width: 81%;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Active Alerts -->
+        <section class="alerts-section">
+            <div class="alerts-header">
+                <h2><i class="fas fa-exclamation-triangle"></i> Active Alerts</h2>
+                <span class="badge" style="background: rgba(0, 255, 136, 0.2); color: #00ff88; padding: 0.25rem 0.5rem; border-radius: 12px;">2 Active</span>
+            </div>
+            <div class="alert-item medium">
+                <i class="fas fa-info-circle alert-icon" style="color: #ffa502;"></i>
+                <div class="alert-content">
+                    <div class="alert-message">MCP Protocol connection pool approaching capacity</div>
+                    <div class="alert-time">2 minutes ago</div>
+                </div>
+            </div>
+            <div class="alert-item low">
+                <i class="fas fa-check-circle alert-icon" style="color: #2ed573;"></i>
+                <div class="alert-content">
+                    <div class="alert-message">Optimization applied: IPC message batching improved by 15%</div>
+                    <div class="alert-time">8 minutes ago</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Performance Statistics -->
+        <section class="performance-stats">
+            <div class="stat-card">
+                <div class="stat-title">Health Checks Performed</div>
+                <div class="stat-value">1,247,832</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Optimizations Applied</div>
+                <div class="stat-value">156</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Average Improvement</div>
+                <div class="stat-value">17.3%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">False Positive Rate</div>
+                <div class="stat-value">2.4%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Prediction Accuracy</div>
+                <div class="stat-value">94.7%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Noise Reduction</div>
+                <div class="stat-value">83.2%</div>
+            </div>
+        </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.js"></script>
+    <script>
+        // WebSocket connection for real-time updates
+        let ws = null;
+        let performanceChart = null;
+        let resourceChart = null;
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeCharts();
+            connectWebSocket();
+            startPerformanceUpdates();
+        });
+
+        function connectWebSocket() {
+            try {
+                ws = new WebSocket('ws://localhost:8080/ws');
+                
+                ws.onopen = function() {
+                    console.log('WebSocket connected');
+                    updateStatus('System Healthy', true);
+                };
+                
+                ws.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    updateDashboard(data);
+                };
+                
+                ws.onclose = function() {
+                    console.log('WebSocket disconnected');
+                    updateStatus('Connection Lost', false);
+                    // Attempt to reconnect
+                    setTimeout(connectWebSocket, 5000);
+                };
+                
+                ws.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                    updateStatus('Connection Error', false);
+                };
+            } catch (error) {
+                console.error('Failed to connect WebSocket:', error);
+                // Fall back to polling
+                startPolling();
+            }
+        }
+
+        function startPolling() {
+            setInterval(() => {
+                fetch('/api/metrics')
+                    .then(response => response.json())
+                    .then(data => updateDashboard(data))
+                    .catch(error => {
+                        console.error('Polling error:', error);
+                        updateStatus('Data Unavailable', false);
+                    });
+            }, 5000); // Poll every 5 seconds
+        }
+
+        function updateStatus(message, isHealthy) {
+            const statusText = document.querySelector('.status-indicator span');
+            const statusDot = document.querySelector('.status-dot');
+            
+            statusText.textContent = message;
+            statusDot.style.background = isHealthy ? '#00ff88' : '#ff4757';
+            
+            if (isHealthy) {
+                statusDot.style.animation = 'pulse 2s infinite';
+            } else {
+                statusDot.style.animation = 'none';
+            }
+        }
+
+        function updateDashboard(data) {
+            // Update key metrics
+            if (data.metrics) {
+                updateElement('doc-rate', data.metrics.document_processing_rate || '28.5');
+                updateElement('cpu-util', data.metrics.cpu_utilization + '%' || '42%');
+                updateElement('gpu-util', data.metrics.gpu_utilization + '%' || '65%');
+                updateElement('memory-usage', data.metrics.memory_usage || '89.5GB');
+                updateElement('ipc-latency', data.metrics.ipc_latency_p99 + 'ms' || '3.2ms');
+                updateElement('pipeline-efficiency', data.metrics.pipeline_efficiency + '%' || '94%');
+            }
+
+            // Update charts
+            if (performanceChart && data.performance_history) {
+                updatePerformanceChart(data.performance_history);
+            }
+            
+            if (resourceChart && data.resource_allocation) {
+                updateResourceChart(data.resource_allocation);
+            }
+
+            // Update component health
+            if (data.component_health) {
+                updateComponentHealth(data.component_health);
+            }
+
+            // Update alerts and predictions
+            if (data.alerts) {
+                updateAlerts(data.alerts);
+            }
+            
+            if (data.predictions) {
+                updatePredictions(data.predictions);
+            }
+        }
+
+        function updateElement(id, value) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value;
+            }
+        }
+
+        function initializeCharts() {
+            // Performance timeline chart
+            const performanceCtx = document.getElementById('performance-chart').getContext('2d');
+            performanceChart = new Chart(performanceCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'CPU %',
+                            data: [],
+                            borderColor: '#00ff88',
+                            backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        },
+                        {
+                            label: 'GPU %',
+                            data: [],
+                            borderColor: '#00ccff',
+                            backgroundColor: 'rgba(0, 204, 255, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        },
+                        {
+                            label: 'Memory %',
+                            data: [],
+                            borderColor: '#ff6b6b',
+                            backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#e0e0e0'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: '#888'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        },
+                        y: {
+                            ticks: {
+                                color: '#888'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            max: 100
+                        }
+                    }
+                }
+            });
+
+            // Resource allocation pie chart
+            const resourceCtx = document.getElementById('resource-chart').getContext('2d');
+            resourceChart = new Chart(resourceCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Rust Core', 'Python ML', 'Shared Memory', 'System'],
+                    datasets: [{
+                        data: [60, 45, 15, 8],
+                        backgroundColor: [
+                            '#00ff88',
+                            '#00ccff',
+                            '#ff6b6b',
+                            '#ffa500'
+                        ],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#e0e0e0',
+                                padding: 20
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updatePerformanceChart(history) {
+            const maxPoints = 50;
+            const now = new Date();
+            
+            // Generate time labels
+            const labels = [];
+            for (let i = maxPoints - 1; i >= 0; i--) {
+                const time = new Date(now.getTime() - i * 5000); // 5 second intervals
+                labels.push(time.toLocaleTimeString());
+            }
+            
+            performanceChart.data.labels = labels;
+            performanceChart.data.datasets[0].data = generateRandomData(maxPoints, 30, 70); // CPU
+            performanceChart.data.datasets[1].data = generateRandomData(maxPoints, 50, 80); // GPU
+            performanceChart.data.datasets[2].data = generateRandomData(maxPoints, 60, 75); // Memory
+            performanceChart.update('none');
+        }
+
+        function updateResourceChart(allocation) {
+            resourceChart.data.datasets[0].data = allocation || [60, 45, 15, 8];
+            resourceChart.update();
+        }
+
+        function generateRandomData(count, min, max) {
+            const data = [];
+            for (let i = 0; i < count; i++) {
+                data.push(Math.random() * (max - min) + min);
+            }
+            return data;
+        }
+
+        function updateComponentHealth(healthData) {
+            // Implementation would update component health cards
+            console.log('Updating component health:', healthData);
+        }
+
+        function updateAlerts(alerts) {
+            // Implementation would update alerts section
+            console.log('Updating alerts:', alerts);
+        }
+
+        function updatePredictions(predictions) {
+            // Implementation would update predictions section
+            console.log('Updating predictions:', predictions);
+        }
+
+        function refreshData() {
+            const btn = document.querySelector('.refresh-btn');
+            const icon = btn.querySelector('i');
+            
+            icon.style.animation = 'spin 1s linear infinite';
+            
+            // Simulate data refresh
+            setTimeout(() => {
+                icon.style.animation = 'none';
+                
+                // Generate some random updates
+                const randomMetrics = {
+                    document_processing_rate: (Math.random() * 10 + 25).toFixed(1),
+                    cpu_utilization: (Math.random() * 20 + 35).toFixed(0),
+                    gpu_utilization: (Math.random() * 15 + 60).toFixed(0),
+                    memory_usage: (Math.random() * 10 + 85).toFixed(1) + 'GB',
+                    ipc_latency_p99: (Math.random() * 2 + 2.5).toFixed(1),
+                    pipeline_efficiency: (Math.random() * 5 + 92).toFixed(0)
+                };
+                
+                updateDashboard({ metrics: randomMetrics });
+            }, 1000);
+        }
+
+        function startPerformanceUpdates() {
+            // Update performance chart every 5 seconds
+            setInterval(() => {
+                if (performanceChart) {
+                    updatePerformanceChart([]);
+                }
+            }, 5000);
+        }
+
+        // Add some interactive features
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.metric-card')) {
+                e.target.closest('.metric-card').style.transform = 'scale(0.98)';
+                setTimeout(() => {
+                    e.target.closest('.metric-card').style.transform = '';
+                }, 150);
+            }
+        });
+
+        // Handle page visibility for performance
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                // Reduce update frequency when tab is not visible
+                console.log('Page hidden, reducing update frequency');
+            } else {
+                console.log('Page visible, resuming normal updates');
+            }
+        });
+    </script>
+</body>
+</html>

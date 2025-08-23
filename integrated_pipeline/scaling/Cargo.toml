@@ -1,0 +1,71 @@
+[package]
+name = "scaling-system"
+version = "2.0.0"
+edition = "2021"
+description = "Dynamic Scaling and Auto-Adjustment System for Hybrid Rust-Python Pipeline"
+license = "MIT"
+
+[dependencies]
+# Async runtime and utilities
+tokio = { version = "1.0", features = ["full"] }
+tokio-util = "0.7"
+futures = "0.3"
+
+# Serialization and data handling
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+log = "0.4"
+env_logger = "0.10"
+
+# Time and duration handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Networking and communication
+reqwest = { version = "0.11", features = ["json", "websockets"] }
+tungstenite = "0.20"
+tokio-tungstenite = "0.20"
+
+# System monitoring
+sysinfo = "0.29"
+procfs = "0.16"
+
+# Machine learning and optimization
+nalgebra = "0.32"
+statrs = "0.16"
+
+# Configuration management
+config = "0.13"
+clap = { version = "4.0", features = ["derive"] }
+
+# Memory management
+parking_lot = "0.12"
+
+# Testing
+proptest = "1.0"
+
+[dev-dependencies]
+tokio-test = "0.4"
+criterion = { version = "0.5", features = ["html_reports"] }
+approx = "0.5"
+
+[[bench]]
+name = "scaling_benchmarks"
+harness = false
+
+[features]
+default = ["full"]
+full = ["mcp-integration", "ml-optimization", "system-monitoring"]
+mcp-integration = []
+ml-optimization = []
+system-monitoring = []
+
+# Development features
+development = ["simulation-mode"]
+simulation-mode = []
