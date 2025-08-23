@@ -71,6 +71,28 @@ pub fn create_test_document(complexity: ComplexityLevel) -> ProcessedDocument {
     }
 }
 
+/// Temporary placeholder for missing ML integration config types
+#[derive(Debug, Clone)]
+pub struct MLIntegrationConfig {
+    pub enable_dynamic_model_selection: bool,
+    pub batch_processing_enabled: bool,
+    pub max_batch_size: usize,
+    pub batch_timeout_ms: u64,
+    pub quality_enhancement_enabled: bool,
+    pub performance_tracking_enabled: bool,
+    pub adaptive_complexity_enabled: bool,
+    pub m3_max_optimization: M3MaxMLConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct M3MaxMLConfig {
+    pub use_unified_memory: bool,
+    pub max_concurrent_models: usize,
+    pub model_cache_size_gb: usize,
+    pub enable_simd_acceleration: bool,
+    pub optimize_for_throughput: bool,
+}
+
 /// Create test ML integration configuration
 pub fn create_test_config() -> MLIntegrationConfig {
     MLIntegrationConfig {

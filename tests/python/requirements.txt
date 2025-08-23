@@ -1,0 +1,31 @@
+# Python testing requirements
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.11.1
+pytest-html==4.1.1
+pytest-xdist==3.3.1
+
+# Coverage reporting
+coverage==7.3.2
+coverage-lcov==0.3.0
+
+# HTTP mocking
+aiohttp==3.9.1
+aioresponses==0.7.4
+
+# Performance testing
+pytest-benchmark==4.0.0
+pytest-timeout==2.1.0
+
+# MLX dependencies (optional - will be mocked if not available)
+# mlx==0.0.9
+# mlx-lm==0.0.8
+
+# System monitoring
+psutil==5.9.6
+numpy==1.24.4
+
+# Async utilities
+asyncio-mqtt==0.13.0
+async-timeout==4.0.3
