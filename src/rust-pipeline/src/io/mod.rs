@@ -34,7 +34,7 @@ pub enum DocumentSource {
 }
 
 /// Document format detection
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DocumentFormat {
     Pdf,
     Html,

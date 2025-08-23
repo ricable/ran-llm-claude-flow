@@ -22,7 +22,7 @@ pub struct ReadRequest {
     pub read_options: ReadOptions,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DocumentFormat {
     Pdf,
     Html,
