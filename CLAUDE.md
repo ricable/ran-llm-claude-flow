@@ -357,14 +357,97 @@ integrated_pipeline/
 - ✅ **Sub-1% monitoring overhead**
 - ✅ **>0.75 quality score** with comprehensive validation
 
+## 🌟 Flow Nexus Integration - AI-Powered Development Platform
+
+### Core Features
+- **🤖 AI Swarm Orchestration**: Deploy multi-agent swarms with specialized roles
+- **📦 Template Marketplace**: Pre-built templates for rapid deployment  
+- **🎮 Gamified Challenges**: Earn rUv credits through coding challenges
+- **☁️ Cloud Sandboxes**: Secure E2B execution environments
+- **🔄 Real-time Collaboration**: Live streaming and monitoring
+- **🔐 Enterprise Security**: Multi-tenant architecture with RLS
+- **📊 Advanced Analytics**: Performance metrics and usage tracking
+- **🌐 GitHub Integration**: Seamless repository management
+
+### Quick Commands
+```bash
+# Initialize and connect
+flow-nexus mcp connect --user your@email.com
+flow-nexus config init
+
+# Swarm management
+flow-nexus swarm init --topology hierarchical --max-agents 8
+flow-nexus swarm spawn researcher --name "DataAnalyst"
+flow-nexus swarm task "Analyze user data and generate insights" --priority high
+
+# Battle system (gamified development)
+flow-nexus mcp deploy combat-swarm --size 5 --tactics adaptive
+flow-nexus mcp battle start --mode algorithm-duel --opponent rival_player
+flow-nexus mcp challenge list --difficulty hard
+
+# Agent marketplace
+flow-nexus mcp marketplace browse --category combat --sort rating
+flow-nexus mcp profile --player champion_player
+```
+
+### Concise Use Cases
+
+**🚀 Rapid Development**
+```bash
+# Deploy full-stack template with variables
+claude "Deploy Claude Code template with my API key"
+flow-nexus swarm init --topology mesh && flow-nexus swarm task "Build user dashboard"
+```
+
+**🧪 Testing & Quality**
+```bash
+# Create Python sandbox and run tests
+claude "Create a Python sandbox and run my script"
+flow-nexus tools run swarm-analyzer --params '{"swarmId": "swarm_123"}'
+```
+
+**⚔️ Competitive Development**
+```bash
+# Battle-ready deployment
+flow-nexus mcp deploy combat-swarm --size 5
+flow-nexus mcp battle start --mode swarm-war
+```
+
+**📊 Performance Monitoring**
+```bash
+# Real-time monitoring and optimization
+flow-nexus monitor --stream-id abc123
+flow-nexus tools run battle-simulator --dry-run
+```
+
+**🔄 CI/CD Integration**
+```bash
+# GitHub Actions integration
+npx flow-nexus auth login --token ${{ secrets.FLOW_NEXUS_TOKEN }}
+npx flow-nexus swarm task "Run automated tests"
+```
+
+### Configuration Profiles
+- **Development**: `~/.flow-nexus/dev-config.json`
+- **Production**: `~/.flow-nexus/prod-config.json`
+- **Logs**: `~/.flow-nexus/logs/flow-nexus.log`
+
+### rUv Economy
+- **Battle Rewards**: Win battles to earn rUv credits
+- **Challenge Prizes**: Complete coding challenges for bonuses  
+- **Agent Sales**: Sell agents in the marketplace
+- **Tournament Winnings**: Compete for large prize pools
+
 ## Support
 
-- Documentation: https://github.com/ruvnet/claude-flow
-- Issues: https://github.com/ruvnet/claude-flow/issues
+- **Flow Nexus**: https://flow-nexus.com | support@flow-nexus.com
+- **Claude Flow**: https://github.com/ruvnet/claude-flow
+- **Issues**: https://github.com/ruvnet/claude-flow/issues
 
 ---
 
 ✅ **5-Agent Swarm Success: Claude Flow coordinates, Claude Code creates!**
+🎮 **Flow Nexus: Where Digital Agents Battle, Build & Evolve!**
 
 # important-instruction-reminders
 Do what has been asked; nothing more, nothing less.
