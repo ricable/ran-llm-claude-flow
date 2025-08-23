@@ -23,3 +23,79 @@ claude-flow
 claude-flow.bat
 claude-flow.ps1
 hive-mind-prompt-*.txt
+
+# Hybrid Pipeline Build Artifacts
+integrated_pipeline/*/target/
+integrated_pipeline/rust_core/target/
+integrated_pipeline/monitoring/target/
+integrated_pipeline/tests/target/
+integrated_pipeline/shared_memory/target/
+integrated_pipeline/ipc_protocol/target/
+integrated_pipeline/config/target/
+
+# Python ML Engine
+integrated_pipeline/python_ml/__pycache__/
+integrated_pipeline/python_ml/src/__pycache__/
+integrated_pipeline/python_ml/*.egg-info/
+integrated_pipeline/python_ml/dist/
+integrated_pipeline/python_ml/build/
+.uv/
+*.pyc
+*.pyo
+*.pyd
+
+# Temporary and Cache Files
+integrated_pipeline/**/temp/
+integrated_pipeline/**/cache/
+integrated_pipeline/**/logs/
+integrated_pipeline/**/*.log
+integrated_pipeline/**/*.tmp
+integrated_pipeline/**/*.lock
+
+# Test Results and Benchmarks
+integrated_pipeline/tests/results/
+integrated_pipeline/tests/benchmarks/*.json
+integrated_pipeline/tests/reports/
+integrated_pipeline/monitoring/metrics/*.json
+integrated_pipeline/monitoring/logs/
+
+# ML Models and Data
+integrated_pipeline/python_ml/models/
+integrated_pipeline/python_ml/checkpoints/
+integrated_pipeline/python_ml/data/
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# System Specific
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE and Editor Files
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.sublime-*
+
+# Performance and Debugging
+integrated_pipeline/**/flamegraph.svg
+integrated_pipeline/**/perf.data*
+integrated_pipeline/**/callgrind.*
+integrated_pipeline/**/*.prof
+
+# Shared Memory and IPC
+integrated_pipeline/shared_memory/*.mmap
+integrated_pipeline/ipc_protocol/pipes/
+/tmp/rust_python_ipc*
+
+# Configuration Overrides
+integrated_pipeline/config/local.yaml
+integrated_pipeline/config/development.yaml
+integrated_pipeline/config/production.yaml
+integrated_pipeline/**/.env
+integrated_pipeline/**/.env.local
