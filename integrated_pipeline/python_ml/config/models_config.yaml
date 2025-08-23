@@ -1,0 +1,262 @@
+# Python ML Engine Configuration
+# Optimized for M3 Max with 45GB memory allocation
+
+# Model configurations for different Qwen3 variants
+models:
+  qwen3_1_5b:
+    size: "1.5B"
+    backend: "mlx"  # mlx, lmstudio, ollama, transformers
+    model_path: "Qwen/Qwen2.5-1.5B-Instruct"
+    memory_budget_gb: 4.0
+    quantization:
+      enabled: true
+      bits: 4
+      group_size: 128
+    generation:
+      max_tokens: 2048
+      temperature: 0.7
+      top_p: 0.9
+      batch_size: 8
+    use_cases:
+      - "fast_processing"
+      - "simple_qa"
+      - "parameter_extraction"
+    
+  qwen3_7b:
+    size: "7B"
+    backend: "mlx"
+    model_path: "Qwen/Qwen2.5-7B-Instruct"
+    memory_budget_gb: 12.0
+    quantization:
+      enabled: true
+      bits: 4
+      group_size: 128
+    generation:
+      max_tokens: 4096
+      temperature: 0.7
+      top_p: 0.9
+      batch_size: 4
+    use_cases:
+      - "balanced_processing"
+      - "technical_qa"
+      - "complex_reasoning"
+    
+  qwen3_32b:
+    size: "32B"
+    backend: "lmstudio"  # Use LM Studio for large model
+    model_path: "qwen2.5-32b-instruct"
+    memory_budget_gb: 30.0
+    quantization:
+      enabled: false  # LM Studio handles quantization
+    generation:
+      max_tokens: 8192
+      temperature: 0.7
+      top_p: 0.9
+      batch_size: 2
+    use_cases:
+      - "high_quality"
+      - "expert_analysis"
+      - "complex_documentation"
+
+# Memory allocation strategy for M3 Max (45GB total)
+memory:
+  total_budget_gb: 45.0
+  allocation:
+    model_weights: 30.0    # 67% for model parameters
+    working_memory: 10.0   # 22% for inference operations
+    cache: 5.0            # 11% for embeddings and KV cache
+  
+  optimization:
+    enable_unified_memory: true
+    memory_pool_size: 1024  # MB
+    garbage_collection_threshold: 0.9
+    
+# Model selection strategy
+selection:
+  strategy: "adaptive"  # adaptive, performance, quality, memory
+  
+  # Complexity thresholds for automatic selection
+  complexity_thresholds:
+    simple: 0.3      # Use 1.5B model
+    moderate: 0.7    # Use 7B model
+    complex: 1.0     # Use 32B model
+    
+  # Quality requirements mapping
+  quality_mapping:
+    basic: "qwen3_1_5b"
+    standard: "qwen3_7b"
+    premium: "qwen3_32b"
+    
+  # Fallback chain
+  fallback_order:
+    - "qwen3_7b"     # Primary fallback
+    - "qwen3_1_5b"   # Secondary fallback
+    - "qwen3_32b"    # Last resort (if available)
+
+# External service configurations
+services:
+  lmstudio:
+    base_url: "http://localhost:1234"
+    api_version: "v1"
+    timeout: 120
+    max_retries: 3
+    connection_pool_size: 8
+    health_check_interval: 30
+    
+  ollama:
+    base_url: "http://localhost:11434"
+    timeout: 60
+    max_retries: 2
+    stream_enabled: false
+    
+# Performance optimization settings
+performance:
+  # MLX specific settings
+  mlx:
+    enable_metal_acceleration: true
+    memory_fraction: 0.85
+    enable_fp16: true
+    enable_quantization: true
+    batch_optimization: true
+    
+  # Batch processing
+  batching:
+    max_batch_size: 8
+    max_wait_time_ms: 100
+    dynamic_batching: true
+    priority_scheduling: true
+    
+  # Caching
+  caching:
+    enable_model_cache: true
+    enable_embedding_cache: true
+    cache_size_mb: 1024
+    ttl_seconds: 3600
+    
+  # Threading
+  threading:
+    max_workers: 8
+    enable_async_processing: true
+    queue_size: 1000
+
+# Quality assessment configuration
+quality:
+  thresholds:
+    minimum: 0.6      # Reject below this
+    target: 0.75      # Aim for this
+    excellent: 0.9    # Flag as high quality
+    
+  metrics:
+    weights:
+      relevance: 0.25
+      accuracy: 0.25
+      diversity: 0.15
+      technical_density: 0.15
+      completeness: 0.10
+      coherence: 0.10
+      
+  assessment:
+    enable_semantic_similarity: true
+    enable_technical_validation: true
+    diversity_threshold: 0.8
+    
+# Semantic processing configuration
+semantic:
+  # Sentence transformer model
+  embedding_model: "all-MiniLM-L6-v2"
+  embedding_device: "mps"  # mps for Apple Silicon, cuda for NVIDIA, cpu for fallback
+  
+  # Text processing
+  max_sequence_length: 8192
+  chunk_size: 1024
+  chunk_overlap: 128
+  
+  # Technical term extraction
+  technical_terms:
+    enable_acronym_detection: true
+    enable_parameter_extraction: true
+    min_term_frequency: 2
+    
+# Document analysis settings
+document_analysis:
+  complexity_factors:
+    weights:
+      length: 0.2
+      technical_density: 0.3
+      parameter_count: 0.3
+      sentence_complexity: 0.2
+      
+  structure_analysis:
+    enable_section_detection: true
+    enable_table_detection: true
+    enable_code_detection: true
+    
+# Question generation settings
+qa_generation:
+  question_types:
+    definition: 0.25
+    parameter: 0.30
+    process: 0.20
+    configuration: 0.15
+    troubleshooting: 0.10
+    
+  difficulty_distribution:
+    basic: 0.30
+    intermediate: 0.40
+    advanced: 0.25
+    expert: 0.05
+    
+  diversity:
+    min_similarity_threshold: 0.3
+    max_attempts: 10
+    enable_paraphrasing: true
+
+# Logging and monitoring
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "structured"  # structured, simple
+  
+  loggers:
+    model_manager: "INFO"
+    semantic_processor: "INFO"
+    mlx_accelerator: "INFO"
+    ipc_client: "INFO"
+    
+  performance_logging:
+    enable_metrics: true
+    log_interval: 60  # seconds
+    detailed_timing: false
+
+# Development and debugging
+development:
+  debug_mode: false
+  enable_profiling: false
+  save_intermediate_results: false
+  
+  testing:
+    mock_external_services: false
+    use_sample_data: false
+    enable_benchmarking: true
+    
+# Integration settings
+integration:
+  # IPC configuration
+  ipc:
+    pipe_path: "/tmp/rust_python_ipc"
+    shared_memory_size_mb: 1024
+    timeout_seconds: 30
+    heartbeat_interval: 10
+    
+  # Performance targets
+  targets:
+    documents_per_hour: 25
+    qa_pairs_per_document: 5
+    quality_threshold: 0.75
+    memory_efficiency: 0.9
+    
+  # Error handling
+  error_handling:
+    max_retries: 3
+    retry_delay: 1.0
+    enable_fallback_models: true
+    timeout_escalation: true
