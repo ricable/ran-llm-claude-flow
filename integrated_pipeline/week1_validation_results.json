@@ -1,9 +1,9 @@
 {
   "summary": {
     "overall_success": true,
-    "tests_passed": 19,
-    "tests_total": 21,
-    "success_rate": 90.47619047619048
+    "tests_passed": 18,
+    "tests_total": 20,
+    "success_rate": 90.0
   },
   "details": [
     {
@@ -80,16 +80,8 @@
     },
     {
       "test": "memory_allocation",
-      "passed": true,
-      "total_gb": 128.0,
-      "available_gb": 99.37654113769531,
-      "allocation_plan": {
-        "rust_core": 60,
-        "python_ml": 45,
-        "shared_ipc": 15,
-        "system_overhead": 8,
-        "total_planned": 128
-      }
+      "passed": false,
+      "error": "psutil not available"
     },
     {
       "test": "rust_compilation",
@@ -99,7 +91,7 @@
     {
       "test": "python_imports",
       "passed": false,
-      "output": "WARNING:root:MLX not available, falling back to CPU inference\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/Users/cedric/orange/ran-llm-claude-flow/integrated_pipeline/python_ml/src/__init__.py\", line 24, in <module>\n    from .model_manager import (\n  File \"/Users/cedric/orange/ran-llm-claude-flow/integrated_pipeline/python_ml/src/model_manager.py\", line 42, in <module>\n    import requests\nModuleNotFoundError: No module named 'requests'\n"
+      "output": "WARNING:root:MLX not available, falling back to CPU inference\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import sys; sys.path.insert(0, \"python_ml\"); from src import model_manager, semantic_processor, ipc_client; print(\"All imports successful\")\n                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/cedric/orange/ran-llm-claude-flow/integrated_pipeline/python_ml/src/__init__.py\", line 24, in <module>\n    from .model_manager import (\n    ...<6 lines>...\n    )\n  File \"/Users/cedric/orange/ran-llm-claude-flow/integrated_pipeline/python_ml/src/model_manager.py\", line 43, in <module>\n    import torch\nModuleNotFoundError: No module named 'torch'\n"
     }
   ],
   "achievements": [

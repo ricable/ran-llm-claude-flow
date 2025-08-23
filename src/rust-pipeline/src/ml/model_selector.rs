@@ -202,7 +202,7 @@ impl ModelSelector {
         system_state: &SystemState,
     ) -> Result<Vec<ModelPrediction>> {
         let mut predictions = Vec::new();
-        let model_metrics = self.model_metrics.read();
+        let model_metrics = self.model_metrics.read().clone();
 
         for model in Qwen3Model::all_models() {
             let specs = model.specs();
@@ -266,7 +266,7 @@ impl ModelSelector {
         mut predictions: Vec<ModelPrediction>,
         system_state: &SystemState,
     ) -> Result<SelectionResult> {
-        let criteria = self.criteria.read();
+        let criteria = self.criteria.read().clone();
         let start_time = Instant::now();
 
         // Filter out models that don't meet hard constraints

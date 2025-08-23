@@ -251,8 +251,11 @@ async fn test_concurrent_processing() {
             if i % 3 == 0 { Priority::High } else { Priority::Medium },
         );
         
-        let handle = tokio::spawn(async move {
-            process_request(request).await
+        let handle = tokio::spawn({
+            let request = request.clone();
+            async move {
+                process_request(request).await
+            }
         });
         
         handles.push(handle);
