@@ -771,12 +771,12 @@ impl ConnectionPool {
 }
 
 /// RAII guard for connection management
-pub struct ConnectionGuard {
-    _permit: tokio::sync::SemaphorePermit<'_>,
+pub struct ConnectionGuard<'a> {
+    _permit: tokio::sync::SemaphorePermit<'a>,
     active_connections: Arc<AtomicUsize>,
 }
 
-impl Drop for ConnectionGuard {
+impl Drop for ConnectionGuard<'_> {
     fn drop(&mut self) {
         self.active_connections.fetch_sub(1, Ordering::SeqCst);
     }

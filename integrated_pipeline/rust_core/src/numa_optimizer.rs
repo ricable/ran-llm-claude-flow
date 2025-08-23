@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use libc::{cpu_set_t, sched_setaffinity, CPU_SET, CPU_ZERO, getpid};
 use crate::types::{Error, PerformanceMetrics};
+use uuid::Uuid;
 
 /// NUMA-aware memory optimization for M3 Max architecture
 /// Manages 128GB unified memory allocation and CPU affinity
@@ -196,26 +196,16 @@ impl NUMAOptimizer {
 
     /// Set optimal CPU affinity for high-performance processing
     pub fn set_optimal_cpu_affinity(&self) -> Result<(), Error> {
-        unsafe {
-            let mut cpu_set: cpu_set_t = std::mem::zeroed();
-            CPU_ZERO(&mut cpu_set);
-            
-            // Bind to performance cores for maximum throughput
-            for &core in &self.cpu_topology.performance_cores {
-                CPU_SET(core as usize, &mut cpu_set);
-            }
-            
-            let result = sched_setaffinity(
-                getpid(),
-                std::mem::size_of::<cpu_set_t>(),
-                &cpu_set
-            );
-            
-            if result != 0 {
-                return Err(Error::CPUAffinityError(format!("Failed to set CPU affinity: {}", result)));
-            }
-        }
+        // Note: CPU affinity setting is limited on macOS
+        // On M3 Max, the scheduler automatically optimizes for performance cores
+        // This is a no-op on macOS but logs the intention
+        log::info!(
+            "CPU affinity optimization requested for {} performance cores", 
+            self.cpu_topology.performance_cores.len()
+        );
         
+        // On macOS, we rely on the system scheduler and Grand Central Dispatch
+        // for optimal core utilization with M3 Max architecture
         Ok(())
     }
 
@@ -334,7 +324,7 @@ impl NUMAOptimizer {
     /// Merge multiple segments into one
     fn merge_segments(&self, segments: Vec<MemorySegment>) -> Result<MemorySegment, Error> {
         let total_size = segments.iter().map(|s| s.size_gb).sum();
-        let merged_id = format!("merged_{}", uuid::Uuid::new_v4());
+        let merged_id = format!("merged_{}", Uuid::new_v4());
         
         Ok(MemorySegment {
             id: merged_id,

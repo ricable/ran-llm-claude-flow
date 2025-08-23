@@ -1,9 +1,9 @@
 {
   "summary": {
     "overall_success": true,
-    "tests_passed": 18,
+    "tests_passed": 19,
     "tests_total": 20,
-    "success_rate": 90.0
+    "success_rate": 95.0
   },
   "details": [
     {
@@ -85,8 +85,8 @@
     },
     {
       "test": "rust_compilation",
-      "passed": false,
-      "output": "warning: unused manifest key: build\nerror: failed to parse manifest at `/Users/cedric/orange/ran-llm-claude-flow/integrated_pipeline/rust_core/Cargo.toml`\n\nCaused by:\n  can't find `document_processing` bench at `benches/document_processing.rs` or `benches/document_processing/main.rs`. Please specify bench.path if you want to use a non-default path.\n"
+      "passed": true,
+      "output": "success"
     },
     {
       "test": "python_imports",

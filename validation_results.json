@@ -1,0 +1,105 @@
+{
+  "validation_results": {
+    "Python Modules": {
+      "model_management/qwen3_variants.py": {
+        "exists": true,
+        "size_kb": 23.9,
+        "status": "\u2705"
+      },
+      "embeddings/sentence_transformer_manager.py": {
+        "exists": true,
+        "size_kb": 23.8,
+        "status": "\u2705"
+      },
+      "dataset_generation/enhanced_pipeline.py": {
+        "exists": true,
+        "size_kb": 37.7,
+        "status": "\u2705"
+      },
+      "integration/rust_ipc_bridge.py": {
+        "exists": true,
+        "size_kb": 23.2,
+        "status": "\u2705"
+      }
+    },
+    "Rust Modules": {
+      "lib.rs": {
+        "exists": true,
+        "size_kb": 1.1,
+        "status": "\u2705"
+      },
+      "types.rs": {
+        "exists": true,
+        "size_kb": 10.3,
+        "status": "\u2705"
+      },
+      "document_processor.rs": {
+        "exists": true,
+        "size_kb": 49.8,
+        "status": "\u2705"
+      },
+      "ipc_manager.rs": {
+        "exists": true,
+        "size_kb": 31.3,
+        "status": "\u2705"
+      },
+      "ml_integration.rs": {
+        "exists": true,
+        "size_kb": 31.7,
+        "status": "\u2705"
+      }
+    },
+    "Test Suites": {
+      "tests/integration/test_hybrid_pipeline.py": {
+        "exists": true,
+        "size_kb": 20.6,
+        "status": "\u2705"
+      },
+      "tests/rust/test_ml_integration.rs": {
+        "exists": true,
+        "size_kb": 19.0,
+        "status": "\u2705"
+      },
+      "tests/python/test_qwen3_variants.py": {
+        "exists": true,
+        "size_kb": 16.7,
+        "status": "\u2705"
+      }
+    },
+    "Benchmarking": {
+      "scripts/benchmark_hybrid_pipeline.py": {
+        "exists": true,
+        "size_kb": 36.7,
+        "status": "\u2705"
+      }
+    },
+    "Module Imports": {
+      "model_management.qwen3_variants": {
+        "importable": false,
+        "error": "No module named 'psutil'",
+        "status": "\u274c"
+      },
+      "embeddings.sentence_transformer_manager": {
+        "importable": false,
+        "error": "No module named 'numpy'",
+        "status": "\u274c"
+      },
+      "dataset_generation.enhanced_pipeline": {
+        "importable": false,
+        "error": "No module named 'pandas'",
+        "status": "\u274c"
+      },
+      "integration.rust_ipc_bridge": {
+        "importable": false,
+        "error": "No module named 'psutil'",
+        "status": "\u274c"
+      }
+    }
+  },
+  "scores": {
+    "implementation_completion": 76.47058823529412,
+    "architecture_score": 100.0,
+    "overall_score": 88.23529411764706
+  },
+  "timestamp": 1755977329.728508
+}

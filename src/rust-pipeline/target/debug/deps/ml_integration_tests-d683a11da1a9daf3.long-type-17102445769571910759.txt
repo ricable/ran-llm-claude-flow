@@ -1,0 +1,2 @@
+impl futures::Future<Output = Result<ran_document_pipeline::optimization::MemoryStats, PipelineError>>
+impl futures::Future<Output = Result<ran_document_pipeline::ml::model_selector::SystemState, PipelineError>>

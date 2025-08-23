@@ -832,9 +832,117 @@ impl DocumentProcessor {
                     let memory_delta = memory_after.saturating_sub(memory_before);
                     
                     (result, memory_delta, path)
-                }\n            })\n            .buffer_unordered(concurrency)\n            .collect()\n            .await;\n        \n        // Calculate statistics\n        let mut successful_documents = 0;\n        let mut total_memory_used = 0;\n        let mut max_memory_delta = 0;\n        \n        for (result, memory_delta, path) in processing_results {\n            match result {\n                Ok(_) => {\n                    successful_documents += 1;\n                    total_memory_used += memory_delta;\n                    max_memory_delta = max_memory_delta.max(memory_delta);\n                }\n                Err(e) => {\n                    error!(\"Failed to process document {:?}: {}\", path, e);\n                }\n            }\n        }\n        \n        let processing_time = start_time.elapsed();\n        let peak_memory_gb = (memory_monitor.load(Ordering::Relaxed) as f64) / 1024.0 / 1024.0 / 1024.0;\n        \n        Ok(M3ProcessingStats {\n            successful_documents,\n            processing_time,\n            peak_memory_gb,\n            average_memory_per_doc_mb: if successful_documents > 0 {\n                total_memory_used / successful_documents\n            } else {\n                0\n            },\n            max_memory_delta_mb: max_memory_delta,\n            concurrency_used: concurrency,\n        })\n    }
+                }
+            })
+            .buffer_unordered(concurrency)
+            .collect()
+            .await;
+        
+        // Calculate statistics
+        let mut successful_documents = 0;
+        let mut total_memory_used = 0;
+        let mut max_memory_delta = 0;
+        
+        for (result, memory_delta, path) in processing_results {
+            match result {
+                Ok(_) => {
+                    successful_documents += 1;
+                    total_memory_used += memory_delta;
+                    max_memory_delta = max_memory_delta.max(memory_delta);
+                }
+                Err(e) => {
+                    error!("Failed to process document {:?}: {}", path, e);
+                }
+            }
+        }
+        
+        let processing_time = start_time.elapsed();
+        let peak_memory_gb = (memory_monitor.load(Ordering::Relaxed) as f64) / 1024.0 / 1024.0 / 1024.0;
+        
+        Ok(M3ProcessingStats {
+            successful_documents,
+            processing_time,
+            peak_memory_gb,
+            average_memory_per_doc_mb: if successful_documents > 0 {
+                total_memory_used / successful_documents
+            } else {
+                0
+            },
+            max_memory_delta_mb: max_memory_delta,
+            concurrency_used: concurrency,
+        })
+    }
     
-    /// Get current memory usage in MB\n    fn get_current_memory_usage() -> usize {\n        // Simplified memory usage tracking\n        // In production, would use more sophisticated memory monitoring\n        static mut SYSTEM: Option<System> = None;\n        \n        unsafe {\n            if SYSTEM.is_none() {\n                SYSTEM = Some(System::new());\n            }\n            \n            if let Some(ref mut sys) = SYSTEM {\n                sys.refresh_memory();\n                (sys.used_memory() / 1024 / 1024) as usize // Convert to MB\n            } else {\n                0\n            }\n        }\n    }\n    \n    /// Log system information for optimization tracking\n    async fn log_system_information(&self) {\n        let mut sys = System::new();\n        sys.refresh_all();\n        \n        info!(\"=== M3 Max System Information ===\");\n        info!(\"Total memory: {:.2}GB\", sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0);\n        info!(\"Available memory: {:.2}GB\", sys.available_memory() as f64 / 1024.0 / 1024.0 / 1024.0);\n        info!(\"CPU cores: {}\", sys.cpus().len());\n        info!(\"Configured memory limit: {}GB\", self.config.memory.memory_limit_gb);\n        info!(\"Thread pool size: {}\", self.config.get_optimal_thread_count());\n        info!(\"====================================\");\n    }\n    \n    /// Log performance metrics for optimization tracking\n    async fn log_performance_metrics(&self, stats: &PipelineStats) {\n        info!(\"=== Performance Metrics ===\");\n        info!(\"Documents processed: {}\", stats.documents_processed);\n        info!(\"QA pairs generated: {}\", stats.total_qa_pairs_generated);\n        info!(\"Average quality: {:.3}\", stats.average_quality);\n        info!(\"Total processing time: {:?}\", stats.total_time);\n        info!(\"Throughput: {:.2} docs/hour\", stats.throughput_per_hour());\n        info!(\"Memory peak: {:.2}GB\", stats.memory_peak_gb);\n        info!(\"Errors: {}\", stats.errors_encountered);\n        info!(\"========================\");\n        \n        // Performance target analysis\n        let target_throughput = 25.0; // 20-30 docs/hour target\n        let actual_throughput = stats.throughput_per_hour();\n        \n        if actual_throughput >= target_throughput {\n            info!(\"✅ Performance target achieved: {:.2} >= {:.2} docs/hour\", \n                  actual_throughput, target_throughput);\n        } else {\n            warn!(\"⚠️ Below performance target: {:.2} < {:.2} docs/hour\", \n                  actual_throughput, target_throughput);\n        }\n        \n        // Memory utilization analysis\n        let target_memory_utilization = 0.90; // 90% target\n        let actual_utilization = stats.memory_peak_gb / (self.config.memory.memory_limit_gb as f64);\n        \n        if actual_utilization >= target_memory_utilization {\n            info!(\"✅ Memory utilization target achieved: {:.1}% >= {:.1}%\", \n                  actual_utilization * 100.0, target_memory_utilization * 100.0);\n        } else {\n            info!(\"📊 Memory utilization: {:.1}% (target: {:.1}%)\", \n                  actual_utilization * 100.0, target_memory_utilization * 100.0);\n        }\n    }
+    /// Get current memory usage in MB
+    fn get_current_memory_usage() -> usize {
+        // Simplified memory usage tracking
+        // In production, would use more sophisticated memory monitoring
+        use std::sync::Mutex;
+        static SYSTEM: Mutex<Option<System>> = Mutex::new(None);
+        
+        let mut system_guard = SYSTEM.lock().unwrap_or_else(|poison| poison.into_inner());
+        if system_guard.is_none() {
+            *system_guard = Some(System::new());
+        }
+        
+        if let Some(ref mut sys) = *system_guard {
+            sys.refresh_memory();
+            (sys.used_memory() / 1024 / 1024) as usize // Convert to MB
+        } else {
+            0
+        }
+    }
+    
+    /// Log system information for optimization tracking
+    async fn log_system_information(&self) {
+        let mut sys = System::new();
+        sys.refresh_all();
+        
+        info!("=== M3 Max System Information ===");
+        info!("Total memory: {:.2}GB", sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0);
+        info!("Available memory: {:.2}GB", sys.available_memory() as f64 / 1024.0 / 1024.0 / 1024.0);
+        info!("CPU cores: {}", sys.cpus().len());
+        info!("Configured memory limit: {}GB", self.config.memory.memory_limit_gb);
+        info!("Thread pool size: {}", self.config.get_optimal_thread_count());
+        info!("====================================");
+    }
+    
+    /// Log performance metrics for optimization tracking
+    async fn log_performance_metrics(&self, stats: &PipelineStats) {
+        info!("=== Performance Metrics ===");
+        info!("Documents processed: {}", stats.documents_processed);
+        info!("QA pairs generated: {}", stats.total_qa_pairs_generated);
+        info!("Average quality: {:.3}", stats.average_quality);
+        info!("Total processing time: {:?}", stats.total_time);
+        info!("Throughput: {:.2} docs/hour", stats.throughput_per_hour());
+        info!("Memory peak: {:.2}GB", stats.memory_peak_gb);
+        info!("Errors: {}", stats.errors_encountered);
+        info!("========================");
+        
+        // Performance target analysis
+        let target_throughput = 25.0; // 20-30 docs/hour target
+        let actual_throughput = stats.throughput_per_hour();
+        
+        if actual_throughput >= target_throughput {
+            info!("✅ Performance target achieved: {:.2} >= {:.2} docs/hour", 
+                  actual_throughput, target_throughput);
+        } else {
+            warn!("⚠️ Below performance target: {:.2} < {:.2} docs/hour", 
+                  actual_throughput, target_throughput);
+        }
+        
+        // Memory utilization analysis
+        let target_memory_utilization = 0.90; // 90% target
+        let actual_utilization = stats.memory_peak_gb / (self.config.memory.memory_limit_gb as f64);
+        
+        if actual_utilization >= target_memory_utilization {
+            info!("✅ Memory utilization target achieved: {:.1}% >= {:.1}%", 
+                  actual_utilization * 100.0, target_memory_utilization * 100.0);
+        } else {
+            info!("📊 Memory utilization: {:.1}% (target: {:.1}%)", 
+                  actual_utilization * 100.0, target_memory_utilization * 100.0);
+        }
+    }
     
     /// Collect and aggregate processing results with optimization
     async fn collect_results_optimized(

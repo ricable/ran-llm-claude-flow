@@ -346,32 +346,46 @@ impl M3MaxMemoryManager {
 
     /// Get memory statistics with M3 Max metrics
     pub async fn get_stats(&self) -> Result<MemoryStats> {
-        let tracker = self.allocation_tracker.lock();
-        let pools = self.memory_pools.read();
+        // Clone data immediately after acquiring locks to avoid holding them across async boundaries
+        let (total_allocated, peak_allocation, allocation_count, deallocation_count) = {
+            let tracker = self.allocation_tracker.lock();
+            (
+                tracker.total_allocated.load(Ordering::Relaxed),
+                tracker.peak_allocation.load(Ordering::Relaxed),
+                tracker.allocation_count.load(Ordering::Relaxed),
+                tracker.deallocation_count.load(Ordering::Relaxed),
+            )
+        };
         
-        let mut pool_stats = Vec::new();
-        for (pool_id, pool) in pools.iter() {
-            let allocated_bytes = pool.allocated_bytes.load(Ordering::Relaxed);
-            let allocation_count = pool.allocation_count.load(Ordering::Relaxed);
+        let (pool_stats, total_capacity) = {
+            let pools = self.memory_pools.read();
+            let mut pool_stats = Vec::new();
+            let mut total_capacity = 0usize;
             
-            pool_stats.push(PoolStats {
-                pool_id: *pool_id,
-                name: pool.name.clone(),
-                pool_type: pool.pool_type.clone(),
-                total_size_bytes: pool.size_bytes,
-                allocated_bytes,
-                utilization_percent: (allocated_bytes as f64 / pool.size_bytes as f64) * 100.0,
-                allocation_count,
-                average_allocation_size: if allocation_count > 0 {
-                    allocated_bytes as f64 / allocation_count as f64
-                } else {
-                    0.0
-                },
-            });
-        }
+            for (pool_id, pool) in pools.iter() {
+                let allocated_bytes = pool.allocated_bytes.load(Ordering::Relaxed);
+                let allocation_count = pool.allocation_count.load(Ordering::Relaxed);
+                total_capacity += pool.size_bytes;
+                
+                pool_stats.push(PoolStats {
+                    pool_id: *pool_id,
+                    name: pool.name.clone(),
+                    pool_type: pool.pool_type.clone(),
+                    total_size_bytes: pool.size_bytes,
+                    allocated_bytes,
+                    utilization_percent: (allocated_bytes as f64 / pool.size_bytes as f64) * 100.0,
+                    allocation_count,
+                    average_allocation_size: if allocation_count > 0 {
+                        allocated_bytes as f64 / allocation_count as f64
+                    } else {
+                        0.0
+                    },
+                });
+            }
+            
+            (pool_stats, total_capacity)
+        };
 
-        let total_allocated = tracker.total_allocated.load(Ordering::Relaxed);
-        let total_capacity: usize = pools.values().map(|p| p.size_bytes).sum();
         let fragmentation_ratio = if total_capacity > 0 {
             1.0 - (total_allocated as f64 / total_capacity as f64)
         } else {
@@ -382,9 +396,9 @@ impl M3MaxMemoryManager {
 
         Ok(MemoryStats {
             total_allocated_bytes: total_allocated,
-            peak_allocation_bytes: tracker.peak_allocation.load(Ordering::Relaxed),
-            allocation_count: tracker.allocation_count.load(Ordering::Relaxed),
-            deallocation_count: tracker.deallocation_count.load(Ordering::Relaxed),
+            peak_allocation_bytes: peak_allocation,
+            allocation_count,
+            deallocation_count,
             fragmentation_ratio,
             pools: pool_stats,
             system_metrics,

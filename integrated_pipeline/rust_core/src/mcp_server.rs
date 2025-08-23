@@ -551,9 +551,7 @@ impl McpServer {
         let prompts = Arc::new(RwLock::new(HashMap::new()));
 
         // Create JSON-RPC handler
-        let mut rpc_handler = MetaIoHandler::with_middleware(
-            jsonrpc_core::middleware::NoopRequestMiddleware
-        );
+        let rpc_handler = MetaIoHandler::new();
 
         let server = Self {
             config: config.clone(),

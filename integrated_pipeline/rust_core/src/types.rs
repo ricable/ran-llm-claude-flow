@@ -106,6 +106,9 @@ pub struct ProcessingHints {
     pub processing_priority: ProcessingPriority,
     pub use_cache: bool,
     pub batch_with_similar: bool,
+    pub batch_processing_eligible: bool,
+    pub expected_processing_time: Duration,
+    pub memory_optimization: MemoryOptimization,
 }
 
 /// Processing priority levels
@@ -116,6 +119,91 @@ pub enum ProcessingPriority {
     High,
     Critical,
 }
+
+/// Memory optimization strategies
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum MemoryOptimization {
+    Standard,
+    M3MaxUnified,
+    HighThroughput,
+    LowLatency,
+}
+
+/// Document content types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DocumentContent {
+    Text(String),
+    Binary(Vec<u8>),
+    Reference(String),
+}
+
+/// Processing metadata for documents
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessingMetadata {
+    pub source_type: String,
+    pub processing_timestamp: DateTime<Utc>,
+    pub quality_score: f64,
+    pub estimated_complexity: f64,
+    pub document_type: String,
+    pub tokens_processed: usize,
+    pub memory_used_mb: f64,
+}
+
+/// Error types for the Rust core system
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("IPC communication error: {0}")]
+    IpcError(String),
+    
+    #[error("Memory allocation error: {0}")]
+    MemoryError(String),
+    
+    #[error("CPU affinity error: {0}")]
+    CPUAffinityError(String),
+    
+    #[error("Memory pool not found: {0}")]
+    MemoryPoolNotFound(u32),
+    
+    #[error("Memory segment not found: {0}")]
+    SegmentNotFound(String),
+    
+    #[error("Insufficient memory: requested {requested}GB, available {available}GB in pool {pool_type}")]
+    InsufficientMemory {
+        requested: usize,
+        available: usize,
+        pool_type: String,
+    },
+    
+    #[error("Document processing error: {0}")]
+    ProcessingError(String),
+    
+    #[error("Quality validation failed: {0}")]
+    QualityError(String),
+    
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+    
+    #[error("Serialization error: {0}")]
+    SerializationError(#[from] serde_json::Error),
+    
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    
+    #[error("Generic error: {0}")]
+    Other(String),
+}
+
+/// Performance metrics for the system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceMetrics {
+    pub throughput_docs_per_hour: f64,
+    pub average_processing_time_ms: f64,
+    pub memory_utilization_percent: f64,
+    pub cpu_utilization_percent: f64,
+    pub error_rate_percent: f64,
+    pub quality_score_average: f64,
+}
+
 
 /// ML processing request sent to Python
 #[derive(Debug, Clone, Serialize, Deserialize)]
