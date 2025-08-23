@@ -8,6 +8,7 @@ pub mod server;
 pub mod client;
 pub mod host;
 pub mod protocol;
+pub mod error_handling;
 
 #[cfg(test)]
 pub mod tests;

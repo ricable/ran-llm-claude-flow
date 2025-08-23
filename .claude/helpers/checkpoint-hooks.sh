@@ -1,5 +1,5 @@
 #!/bin/bash
-# GitHub-specific checkpoint hook functions for Claude settings.json
+# Checkpoint hook functions for Claude settings.json
 
 # Function to handle pre-edit checkpoints
 pre_edit_checkpoint() {
@@ -34,7 +34,7 @@ EOF
     fi
 }
 
-# Function to handle post-edit checkpoints with GitHub release
+# Function to handle post-edit checkpoints
 post_edit_checkpoint() {
     local tool_input="$1"
     local file=$(echo "$tool_input" | jq -r '.file_path // empty')
@@ -88,7 +88,7 @@ EOF
     fi
 }
 
-# Function to handle task checkpoints with GitHub release
+# Function to handle task checkpoints
 task_checkpoint() {
     local user_prompt="$1"
     local task=$(echo "$user_prompt" | head -c 100 | tr '\n' ' ')
@@ -100,24 +100,12 @@ task_checkpoint() {
         git add -A
         git commit -m "🔖 Task checkpoint: $task..." --quiet || true
         
-        # Create GitHub release if gh CLI is available
-        if command -v gh &> /dev/null; then
-            echo "🚀 Creating GitHub release for checkpoint..."
+        # Optional GitHub release
+        if command -v gh &> /dev/null && [ "${CREATE_GH_RELEASE:-false}" = "true" ]; then
             gh release create "$checkpoint_name" \
                 --title "Checkpoint: $(date +'%Y-%m-%d %H:%M')" \
-                --notes "Task: $task
-
-## Checkpoint Details
-- Branch: $(git branch --show-current)
-- Commit: $(git rev-parse HEAD)
-- Files changed: $(git diff HEAD~1 --stat | wc -l) files
-
-## Rollback Instructions
-```bash
-# To rollback to this checkpoint:
-git checkout $checkpoint_name
-```" \
-                --prerelease || echo "⚠️  Failed to create GitHub release"
+                --notes "Task: $task" \
+                --prerelease || true
         fi
         
         # Store metadata
@@ -127,8 +115,7 @@ git checkout $checkpoint_name
   "checkpoint": "$checkpoint_name",
   "task": "$task",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "commit": "$(git rev-parse HEAD)",
-  "github_release": "$(command -v gh &> /dev/null && echo 'true' || echo 'false')"
+  "commit": "$(git rev-parse HEAD)"
 }
 EOF
         
@@ -136,14 +123,14 @@ EOF
     fi
 }
 
-# Function to handle session end with GitHub summary
+# Function to handle session end
 session_end_checkpoint() {
     local session_id="session-$(date +%Y%m%d-%H%M%S)"
     local summary_file=".claude/checkpoints/summary-$session_id.md"
     
     mkdir -p .claude/checkpoints
     
-    # Create detailed summary
+    # Create summary
     cat > "$summary_file" <<EOF
 # Session Summary - $(date +'%Y-%m-%d %H:%M:%S')
 
@@ -156,42 +143,24 @@ $(git diff --name-only $(git log --format=%H -n 1 --before="1 hour ago" 2>/dev/n
 ## Recent Commits
 $(git log --oneline -10 --grep="Checkpoint" || echo "No checkpoint commits")
 
-## GitHub Releases Created
-$(gh release list --limit 10 | grep "checkpoint-" || echo "No GitHub releases")
-
 ## Rollback Instructions
 To rollback to a specific checkpoint:
-```bash
+\`\`\`bash
 # List all checkpoints
 git tag -l 'checkpoint-*' | sort -r
-
-# List GitHub releases
-gh release list
 
 # Rollback to a checkpoint
 git checkout checkpoint-YYYYMMDD-HHMMSS
 
-# Or download release
-gh release download checkpoint-YYYYMMDD-HHMMSS
-
 # Or reset to a checkpoint (destructive)
 git reset --hard checkpoint-YYYYMMDD-HHMMSS
-```
+\`\`\`
 EOF
     
     # Create final checkpoint
     git add -A
     git commit -m "🏁 Session end checkpoint: $session_id" --quiet || true
     git tag -a "session-end-$session_id" -m "End of Claude session"
-    
-    # Create GitHub session summary if gh is available
-    if command -v gh &> /dev/null; then
-        echo "📊 Creating GitHub session summary..."
-        gh release create "session-$session_id" \
-            --title "Session Summary: $(date +'%Y-%m-%d %H:%M')" \
-            --notes-file "$summary_file" \
-            --prerelease || echo "⚠️  Failed to create GitHub session summary"
-    fi
     
     echo "✅ Session summary saved to: $summary_file"
     echo "📌 Final checkpoint: session-end-$session_id"
