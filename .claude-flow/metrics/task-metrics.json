@@ -1,26 +1,10 @@
 [
   {
-    "id": "cmd-init-1755883293606",
-    "type": "init",
+    "id": "cmd-hooks-1755918980090",
+    "type": "hooks",
     "success": true,
-    "duration": 0.7748749999999944,
-    "timestamp": 1755883293607,
-    "metadata": {}
-  },
-  {
-    "id": "cmd-init-1755883307686",
-    "type": "init",
-    "success": true,
-    "duration": 3753.2177500000003,
-    "timestamp": 1755883311440,
-    "metadata": {}
-  },
-  {
-    "id": "cmd-github-1755883324968",
-    "type": "github",
-    "success": true,
-    "duration": 2172093.178708,
-    "timestamp": 1755885497047,
+    "duration": 4.751915999999994,
+    "timestamp": 1755918980094,
     "metadata": {}
   }
 ]

@@ -1,0 +1,52 @@
+{
+  "name": "@ericsson/ran-sdk",
+  "version": "1.0.0",
+  "description": "Ericsson RAN SDK for automated network configuration and management",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:unit": "jest tests/unit",
+    "test:integration": "jest tests/integration", 
+    "test:contracts": "jest tests/contracts",
+    "test:verbose": "jest --verbose",
+    "test:debug": "jest --verbose --no-coverage",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ericsson",
+    "ran",
+    "lte",
+    "5g",
+    "automation",
+    "network",
+    "configuration"
+  ],
+  "author": "Ericsson",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "lodash": "^4.17.21",
+    "winston": "^3.11.0",
+    "yaml": "^2.3.4"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.8",
+    "@types/lodash": "^4.14.202",
+    "@types/node": "^20.9.0",
+    "@typescript-eslint/eslint-plugin": "^6.12.0",
+    "@typescript-eslint/parser": "^6.12.0",
+    "eslint": "^8.54.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
